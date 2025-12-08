@@ -6,13 +6,15 @@ Tachyon is a Neo4j-backed scheduling and resource management system designed to 
 
 | Section | Description |
 |---------|-------------|
-| [00-overview/](00-overview/) | Introduction, design principles, glossary |
+| [00-overview/](00-overview/) | Introduction, design principles, technology stack, glossary |
 | [01-schema/](01-schema/) | Node types and relationship definitions |
 | [02-patterns/](02-patterns/) | Implementation patterns (NUMA, PCI, vGPU, etc.) |
 | [03-constraints/](03-constraints/) | Constraint modeling (traits, aggregates, server groups) |
 | [04-queries/](04-queries/) | Cypher query implementations (filters, weighers) |
 | [05-operations/](05-operations/) | Runtime operations (claiming, indexes, telemetry) |
 | [06-migration/](06-migration/) | Placement API migration mapping |
+| [07-watcher-integration/](07-watcher-integration/) | Watcher decision engine integration |
+| [08-testing/](08-testing/) | Testing architecture and PTI compliance |
 | [reference/](reference/) | OpenStack Nova/Placement reference material |
 | [appendix/](appendix/) | Use case traceability matrix |
 
@@ -27,7 +29,7 @@ Start with `_manifest.yaml` to discover relevant files by keywords. Each file co
 
 ## For Humans
 
-Read sections in order (00 → 06) for progressive understanding. Each section has a README.md as its entry point.
+Read sections in order (00 → 08) for progressive understanding. Each section has a README.md as its entry point.
 
 ## Key Concepts
 
@@ -36,6 +38,17 @@ Read sections in order (00 → 06) for progressive understanding. Each section h
 - **Trait**: Qualitative capabilities (HW_CPU_X86_AVX2, CUSTOM_*)
 - **Consumer**: Entity consuming resources (VM instance)
 - **Aggregate**: Logical grouping for scheduling policies
+
+## Technology Stack
+
+See [00-overview/technology-stack.md](00-overview/technology-stack.md) for details.
+
+| Component | Technology |
+|-----------|------------|
+| Database | Neo4j (graph database) |
+| REST API | Flask |
+| Packaging | pbr (OpenStack standard) |
+| Testing | stestr + Gabbi + testcontainers |
 
 ## Document Version
 

@@ -35,6 +35,10 @@ sections:
     path: 07-watcher-integration/
     description: Watcher decision engine integration and simulation
     
+  - id: testing
+    path: 08-testing/
+    description: Testing architecture, fixtures, and PTI compliance
+    
   - id: reference
     path: reference/
     description: OpenStack Nova/Placement reference material
@@ -57,6 +61,12 @@ files:
     title: Glossary
     description: Term definitions and quick reference
     keywords: [glossary, terms, definitions, reference]
+    dependencies: []
+    
+  - path: 00-overview/technology-stack.md
+    title: Technology Stack
+    description: Core technology choices - Flask, pbr, Neo4j, and future uv consideration
+    keywords: [flask, pbr, uv, packaging, api, wsgi, build-system, pyproject, neo4j]
     dependencies: []
 
   # 01-schema/nodes
@@ -398,4 +408,47 @@ files:
     keywords: [traceability, matrix, coverage, use-cases]
     dependencies:
       - reference/use-cases.md
+
+  # 08-testing
+  - path: 08-testing/README.md
+    title: Testing Overview
+    description: Testing philosophy, architecture, and infrastructure for Tachyon
+    keywords: [testing, unit-tests, functional-tests, gabbi, stestr, pti, fixtures]
+    dependencies: []
+    
+  - path: 08-testing/project-structure.md
+    title: Project Structure
+    description: src layout and directory organization for Tachyon
+    keywords: [src-layout, project-structure, directory, pyproject, tox, pbr]
+    dependencies:
+      - 08-testing/README.md
+      
+  - path: 08-testing/fixtures.md
+    title: Fixture Architecture
+    description: Test fixture design patterns using the fixtures library
+    keywords: [fixtures, local_fixtures, testtools, useFixture, addCleanup, composition]
+    dependencies:
+      - 08-testing/README.md
+      
+  - path: 08-testing/gabbi-tests.md
+    title: Gabbi Tests
+    description: Placement API compatibility testing using Gabbi YAML tests
+    keywords: [gabbi, yaml, api-testing, placement, compatibility, wsgi-intercept]
+    dependencies:
+      - 08-testing/fixtures.md
+      - 06-migration/api-mapping.md
+      
+  - path: 08-testing/neo4j-testing.md
+    title: Neo4j Testing
+    description: Database testing patterns using testcontainers
+    keywords: [neo4j, testcontainers, database, isolation, container, cypher]
+    dependencies:
+      - 08-testing/fixtures.md
+      
+  - path: 08-testing/pti-compliance.md
+    title: PTI Compliance
+    description: OpenStack Project Testing Interface requirements and implementation
+    keywords: [pti, openstack, tox, stestr, coverage, pep8, sphinx]
+    dependencies:
+      - 08-testing/README.md
 
