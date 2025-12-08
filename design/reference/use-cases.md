@@ -472,3 +472,88 @@ requirements for providers without requiring resource allocation from them.
 As an operator, I want forbidden aggregate membership queries to exclude
 hosts in specific aggregates from consideration.
 
+## Watcher Decision Engine Use Cases
+
+The following use cases describe Tachyon's integration with OpenStack Watcher
+for resource optimization and speculative planning.
+
+### Data Model Delegation
+
+As a Watcher developer, I want to offload the cluster data model to Tachyon
+so that decision engine instances can be stateless and horizontally scalable,
+eliminating the need to maintain NetworkX graphs in each instance's memory.
+
+As a Watcher developer, I want Tachyon to maintain a consistent, real-time
+view of compute nodes, instances, storage nodes, pools, and volumes so that
+multiple decision engine instances can query the same authoritative state
+without synchronization overhead.
+
+As a Watcher developer, I want to query resource usage and availability
+through Tachyon's graph queries instead of reconstructing this information
+from in-memory NetworkX structures, enabling more efficient and consistent
+optimization calculations.
+
+### Speculative Simulation
+
+As a Watcher developer, I want to simulate multiple workload placement
+permutations server-side to calculate optimal action plans without storing
+the full model in client memory or copying the entire graph.
+
+As a Watcher developer, I want to create isolated simulation sessions that
+track speculative changes (moves, allocations, deallocations) as deltas
+against the global graph without modifying the authoritative state.
+
+As a Watcher developer, I want to evaluate optimization metrics (resource
+balance, utilization variance, standard deviation) on speculative virtual
+states to compare the effectiveness of different migration strategies.
+
+As a Watcher developer, I want to query the "effective" placement of
+instances in a simulation session, where the virtual state reflects all
+recorded delta operations layered on top of the global graph.
+
+As a Watcher developer, I want to find valid migration destinations for
+an instance considering both the global state and any speculative moves
+already recorded in my simulation session.
+
+### Multi-Strategy Support
+
+As a Watcher developer, I want to run multiple optimization strategies
+concurrently, each with its own simulation session, so that different
+approaches can be evaluated in parallel without interference.
+
+As a Watcher developer, I want simulation sessions to be isolated from
+each other, so that speculative changes in one session don't affect
+queries or calculations in another session.
+
+As a Watcher developer, I want to compare the outcomes of different
+simulation sessions to select the best optimization strategy before
+committing any changes to the global state.
+
+### Session Lifecycle
+
+As a Watcher developer, I want simulation sessions to expire automatically
+after a configurable timeout to prevent resource leaks from abandoned
+optimization attempts.
+
+As a Watcher developer, I want to extend a simulation session's lifetime
+for long-running optimization calculations that require more time than
+the default timeout.
+
+As a Watcher developer, I want to commit a simulation session's deltas
+to the global graph when an optimization plan is approved, atomically
+applying all recorded migrations.
+
+As a Watcher developer, I want to rollback (discard) a simulation session
+without affecting the global state when an optimization plan is rejected
+or superseded.
+
+### Conflict Detection
+
+As a Watcher developer, I want Tachyon to detect conflicts when committing
+a simulation session if the global state has changed since the session was
+created, preventing inconsistent updates from stale optimization plans.
+
+As a Watcher developer, I want to know which specific consumers or providers
+have been modified when a commit conflict is detected, so that I can decide
+whether to retry, rebase, or abandon the optimization plan.
+

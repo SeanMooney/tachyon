@@ -1,10 +1,11 @@
 ---
 title: Introduction and Goals
 description: Purpose, why graph, goals, and scope of Tachyon
-keywords: [introduction, goals, graph-database, neo4j, placement, scheduler]
+keywords: [introduction, goals, graph-database, neo4j, placement, scheduler, watcher, simulation]
 related:
   - 00-overview/design-principles.md
   - 01-schema/README.md
+  - 07-watcher-integration/README.md
 implements: []
 section: overview
 ---
@@ -38,6 +39,8 @@ Neo4j excels at these patterns, providing:
 2. **Enhanced Scheduling Capabilities**: Enable graph-native optimizations not possible in relational systems
 3. **Real-time Telemetry Integration**: Provide hooks for Prometheus/Aetos metrics to inform scheduling decisions
 4. **Extensibility**: Allow custom constraints and policies without code changes using Neo4j's query language
+5. **Watcher Integration**: Serve as a stateless data model backend for Watcher's decision engine, enabling horizontal scaling and server-side optimization simulation
+6. **Speculative Planning**: Support what-if analysis through simulation sessions that evaluate workload placement permutations without global state modification
 
 ## Scope
 
@@ -47,6 +50,8 @@ This design covers:
 - Nova scheduling concepts (Flavor, Image, ServerGroup, Cell, NUMA topology)
 - Graph-native optimizations for common scheduling patterns
 - Migration path from existing Placement deployments
+- Watcher decision engine data model delegation and simulation sessions
+- Server-side speculative planning for optimization strategies
 
 See [reference/use-cases.md](../reference/use-cases.md) for the complete list of use cases this model must support.
 

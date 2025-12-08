@@ -1,9 +1,10 @@
 ---
 title: Use Case Coverage Matrix
 description: Traceability between use cases and implementation
-keywords: [traceability, matrix, coverage, use-cases]
+keywords: [traceability, matrix, coverage, use-cases, watcher, simulation]
 related:
   - reference/use-cases.md
+  - 07-watcher-integration/README.md
 implements: []
 section: appendix
 ---
@@ -112,4 +113,57 @@ Cross-reference between use cases and Tachyon implementation.
 | ServerGroupSoftAffinityWeigher | Member count |
 | ServerGroupSoftAntiAffinityWeigher | Negative count |
 | TraitAffinityWeigher | Preferred/avoided scoring |
+
+## Watcher Integration
+
+| Use Case | Model Components | Key Operations |
+|----------|------------------|----------------|
+| Data model delegation | Graph schema maps to NetworkX model | Query via Cypher instead of in-memory |
+| Stateless decision engine | Tachyon stores all state | No local NetworkX graph required |
+| Horizontal scaling | Shared graph backend | Multiple DE instances query same state |
+| Real-time consistency | Notification-driven updates | Consumers/providers updated atomically |
+
+## Simulation Sessions
+
+| Use Case | Implementation | Key Queries |
+|----------|----------------|-------------|
+| Create session | `:SimulationSession` node | Session lifecycle operations |
+| Record move delta | `:SpeculativeDelta` with `type: 'MOVE'` | `[:HAS_DELTA]` relationship |
+| Record allocation | `:SpeculativeDelta` with `type: 'ALLOCATE'` | Delta chain tracking |
+| Record deallocation | `:SpeculativeDelta` with `type: 'DEALLOCATE'` | Delta chain tracking |
+| Query virtual state | Overlay deltas on global graph | Virtual usage calculation |
+| Find migration targets | Consider session deltas | Capacity check with deltas |
+| Session isolation | Separate `:SimulationSession` nodes | No cross-session interference |
+
+## Optimization Metrics
+
+| Use Case | Implementation | Key Queries |
+|----------|----------------|-------------|
+| Resource balance score | Standard deviation of utilization | Aggregation over virtual state |
+| Utilization variance | Virtual usage / capacity | Per-provider calculation |
+| Compare strategies | Multi-session queries | Side-by-side metric comparison |
+| Migration impact | Before/after delta analysis | Metric delta calculation |
+
+## Session Lifecycle
+
+| Use Case | Implementation | Key Operations |
+|----------|----------------|----------------|
+| Session creation | Create `:SimulationSession` | Anchor to global generation |
+| Session expiry | TTL-based cleanup | `expires_at` timestamp check |
+| Session commit | Apply deltas to global graph | Atomic transaction |
+| Session rollback | Delete deltas | Mark session rolled_back |
+| Conflict detection | Generation comparison | Stale session detection |
+
+## Watcher Model Mapping
+
+| Watcher Entity | Tachyon Equivalent | Relationship |
+|----------------|-------------------|--------------|
+| `ComputeNode` | `:ResourceProvider` | `:HAS_INVENTORY` → `:Inventory` |
+| `Instance` | `:Consumer` | `:CONSUMES` → `:Inventory` |
+| `StorageNode` | `:ResourceProvider` with storage trait | `:HAS_TRAIT` |
+| `Pool` | Child `:ResourceProvider` | `:PARENT_OF` |
+| `Volume` | `:Consumer` | `:CONSUMES` → `:Inventory` |
+| `IronicNode` | `:ResourceProvider` with baremetal trait | `:HAS_TRAIT` |
+| `migrate_instance()` | Speculative delta or commit | `MOVE` delta type |
+| `get_node_used_resources()` | Aggregation query | Virtual state overlay |
 

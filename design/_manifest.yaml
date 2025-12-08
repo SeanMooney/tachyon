@@ -31,6 +31,10 @@ sections:
     path: 06-migration/
     description: Placement API compatibility layer
     
+  - id: watcher-integration
+    path: 07-watcher-integration/
+    description: Watcher decision engine integration and simulation
+    
   - id: reference
     path: reference/
     description: OpenStack Nova/Placement reference material
@@ -307,6 +311,14 @@ files:
     keywords: [telemetry, prometheus, metrics, utilization, power-aware]
     dependencies:
       - 01-schema/nodes/resource-provider.md
+      
+  - path: 05-operations/simulation.md
+    title: Simulation Operations
+    description: API operations for speculative what-if analysis
+    keywords: [simulation, session, speculative, what-if, optimization, delta, sandbox]
+    dependencies:
+      - 07-watcher-integration/simulation-sessions.md
+      - 05-operations/resource-claiming.md
 
   # 06-migration
   - path: 06-migration/api-mapping.md
@@ -354,6 +366,30 @@ files:
     description: Cheat sheet for node labels, relationships, and patterns
     keywords: [quick-reference, cheat-sheet, labels, relationships]
     dependencies: []
+
+  # 07-watcher-integration
+  - path: 07-watcher-integration/README.md
+    title: Watcher Integration Overview
+    description: Integration with OpenStack Watcher for stateless optimization
+    keywords: [watcher, decision-engine, optimization, simulation, stateless, horizontal-scaling]
+    dependencies: []
+    
+  - path: 07-watcher-integration/simulation-sessions.md
+    title: Simulation Sessions
+    description: Server-side sandbox for speculative what-if analysis
+    keywords: [simulation, session, delta, speculation, sandbox, what-if]
+    dependencies:
+      - 07-watcher-integration/README.md
+      - 01-schema/nodes/consumer.md
+      
+  - path: 07-watcher-integration/watcher-model-mapping.md
+    title: Watcher Model Mapping
+    description: Mapping Watcher entities to Tachyon graph nodes and relationships
+    keywords: [watcher, mapping, compute-node, instance, storage, baremetal]
+    dependencies:
+      - 07-watcher-integration/README.md
+      - 01-schema/nodes/resource-provider.md
+      - 01-schema/nodes/consumer.md
 
   # appendix
   - path: appendix/use-case-matrix.md
