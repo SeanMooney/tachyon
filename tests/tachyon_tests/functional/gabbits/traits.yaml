@@ -1,0 +1,143 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- Global Trait CRUD ---
+
+- name: list empty traits
+  GET: /traits
+  status: 200
+  response_json_paths:
+    $.traits: []
+
+- name: create custom trait
+  PUT: /traits/CUSTOM_FAST
+  status: 204
+
+- name: create another trait
+  PUT: /traits/CUSTOM_GPU
+  status: 204
+
+- name: list traits
+  GET: /traits
+  status: 200
+  response_json_paths:
+    $.traits.`len`: 2
+
+- name: list traits with name filter
+  GET: /traits?name=CUSTOM_F
+  status: 200
+  response_json_paths:
+    $.traits.`len`: 1
+    $.traits[0]: CUSTOM_FAST
+
+- name: get trait
+  GET: /traits/CUSTOM_FAST
+  status: 200
+  response_json_paths:
+    $.name: CUSTOM_FAST
+
+- name: get nonexistent trait
+  GET: /traits/NONEXISTENT
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+
+# --- Provider Setup ---
+
+- name: create provider
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+    name: trait-rp
+  status: 200
+
+# --- Provider Traits ---
+
+- name: get empty provider traits
+  GET: /resource_providers/$ENVIRON['RP_UUID']/traits
+  status: 200
+  response_json_paths:
+    $.traits: []
+    $.resource_provider_generation: 0
+
+- name: put provider traits without generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  request_headers:
+    content-type: application/json
+  data:
+    traits:
+      - CUSTOM_FAST
+  status: 400
+
+- name: put provider traits with wrong generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 999
+    traits:
+      - CUSTOM_FAST
+  status: 409
+
+- name: put provider traits
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 0
+    traits:
+      - CUSTOM_FAST
+      - CUSTOM_GPU
+  status: 200
+  response_json_paths:
+    $.resource_provider_generation: 1
+    $.traits.`len`: 2
+
+- name: get provider traits
+  GET: /resource_providers/$ENVIRON['RP_UUID']/traits
+  status: 200
+  response_json_paths:
+    $.traits.`len`: 2
+    $.resource_provider_generation: 1
+
+- name: replace provider traits
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 1
+    traits:
+      - CUSTOM_GPU
+  status: 200
+  response_json_paths:
+    $.traits.`len`: 1
+
+- name: delete provider traits
+  DELETE: /resource_providers/$ENVIRON['RP_UUID']/traits
+  status: 204
+
+- name: verify traits deleted
+  GET: /resource_providers/$ENVIRON['RP_UUID']/traits
+  status: 200
+  response_json_paths:
+    $.traits: []
+
+# --- Trait Deletion ---
+
+- name: delete unused trait
+  DELETE: /traits/CUSTOM_FAST
+  status: 204
+
+- name: delete nonexistent trait
+  DELETE: /traits/NONEXISTENT
+  status: 404

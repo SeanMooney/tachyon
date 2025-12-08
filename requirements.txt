@@ -1,0 +1,10 @@
+Flask>=3.0.2
+neo4j>=5.18.0
+oslo.config>=9.4.0
+oslo.context>=5.5.0
+oslo.log>=6.1.0
+oslo.middleware>=6.1.0
+keystonemiddleware>=10.6.0
+oslo.policy>=4.2.1
+stevedore>=5.2.0
+werkzeug>=3.0.1

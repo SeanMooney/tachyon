@@ -119,4 +119,3 @@ MATCH (rp:ResourceProvider)-[:MEMBER_OF]->(agg:Aggregate)
 WHERE agg.ssd = 'true'
 RETURN rp
 ```
-

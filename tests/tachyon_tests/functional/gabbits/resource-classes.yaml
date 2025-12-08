@@ -1,0 +1,74 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- List Empty ---
+
+- name: list empty resource classes
+  GET: /resource_classes
+  status: 200
+  response_json_paths:
+    $.resource_classes: []
+
+# --- Create Custom Resource Class ---
+
+- name: create custom resource class
+  PUT: /resource_classes/CUSTOM_DISK
+  status: 204
+
+- name: create another custom resource class
+  PUT: /resource_classes/CUSTOM_ACCELERATOR
+  status: 204
+
+# --- Get ---
+
+- name: get resource class
+  GET: /resource_classes/CUSTOM_DISK
+  status: 200
+  response_json_paths:
+    $.name: CUSTOM_DISK
+
+- name: get nonexistent resource class
+  GET: /resource_classes/NONEXISTENT
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+
+# --- List ---
+
+- name: list resource classes
+  GET: /resource_classes
+  status: 200
+  response_json_paths:
+    $.resource_classes.`len`: 2
+
+# --- Create Standard Resource Class ---
+
+- name: create standard resource class VCPU
+  PUT: /resource_classes/VCPU
+  status: 204
+
+- name: verify VCPU exists
+  GET: /resource_classes/VCPU
+  status: 200
+
+# --- Delete ---
+
+- name: delete custom resource class
+  DELETE: /resource_classes/CUSTOM_ACCELERATOR
+  status: 204
+
+- name: verify deleted
+  GET: /resource_classes/CUSTOM_ACCELERATOR
+  status: 404
+
+- name: delete nonexistent resource class
+  DELETE: /resource_classes/NONEXISTENT
+  status: 404

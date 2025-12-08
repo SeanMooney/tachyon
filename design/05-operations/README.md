@@ -40,4 +40,3 @@ This section covers runtime operations for the Tachyon scheduling system.
 - Real-time utilization queries
 - Threshold alerts
 - Power-aware scheduling
-

@@ -130,4 +130,3 @@ tox -e functional -- tachyon_tests.functional.test_api.ResourceProviderGabbits
 3. **Gabbi tests**: Add YAML files to `tests/tachyon_tests/functional/gabbits/`
 
 See [fixtures.md](fixtures.md) for fixture usage patterns.
-

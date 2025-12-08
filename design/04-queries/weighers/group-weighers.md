@@ -107,7 +107,7 @@ WITH host, host.hypervisor_version AS version
 // Normalize versions
 WITH collect({host: host, version: version}) AS all_hosts
 WITH all_hosts,
-     reduce(max_v = 0, h IN all_hosts | 
+     reduce(max_v = 0, h IN all_hosts |
             CASE WHEN h.version > max_v THEN h.version ELSE max_v END) AS max_version
 
 UNWIND all_hosts AS h
@@ -130,7 +130,7 @@ WHERE NOT ()-[:PARENT_OF]->(host)
 // RAM weight
 MATCH (host)-[:HAS_INVENTORY]->(mem_inv)-[:OF_CLASS]->(:ResourceClass {name: 'MEMORY_MB'})
 OPTIONAL MATCH (mem_inv)<-[m_alloc:CONSUMES]-()
-WITH host, 
+WITH host,
      (mem_inv.total - mem_inv.reserved) * mem_inv.allocation_ratio - COALESCE(sum(m_alloc.used), 0) AS free_ram
 
 // CPU weight
@@ -188,4 +188,3 @@ WITH host, member_count,
 RETURN host, member_count, group_weight
 ORDER BY group_weight DESC
 ```
-

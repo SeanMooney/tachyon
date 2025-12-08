@@ -54,4 +54,3 @@ This design covers:
 - Server-side speculative planning for optimization strategies
 
 See [reference/use-cases.md](../reference/use-cases.md) for the complete list of use cases this model must support.
-

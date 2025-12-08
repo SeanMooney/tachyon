@@ -50,23 +50,23 @@ from flask import Flask
 
 def create_app(config=None):
     """Create and configure the Flask application.
-    
+
     Args:
         config: Optional dict of configuration overrides.
                 Typically used for testing (e.g., {'TESTING': True}).
-    
+
     Returns:
         Configured Flask application instance.
     """
     app = Flask(__name__)
-    
+
     # Load default configuration
     app.config.from_object('tachyon.api.config.DefaultConfig')
-    
+
     # Apply overrides
     if config:
         app.config.update(config)
-    
+
     # Register blueprints
     from tachyon.api.blueprints import (
         resource_providers,
@@ -82,15 +82,15 @@ def create_app(config=None):
     app.register_blueprint(traits.bp)
     app.register_blueprint(aggregates.bp)
     app.register_blueprint(resource_classes.bp)
-    
+
     # Register error handlers
     from tachyon.api import errors
     errors.register_handlers(app)
-    
+
     # Register middleware
     from tachyon.api import middleware
     middleware.register(app)
-    
+
     return app
 ```
 
@@ -159,7 +159,7 @@ from flask import request, g
 
 def register(app):
     """Register middleware with the Flask application."""
-    
+
     @app.before_request
     def authenticate():
         """Validate authentication and set request context."""
@@ -168,7 +168,7 @@ def register(app):
             g.context = create_noauth_context(request)
         else:
             g.context = validate_keystone_token(request)
-    
+
     @app.before_request
     def check_microversion():
         """Parse and validate microversion header."""
@@ -186,21 +186,21 @@ from oslo_config import cfg
 
 def loadapp(conf=None):
     """Load the WSGI application for deployment.
-    
+
     Args:
         conf: oslo.config ConfigOpts instance. If None, uses global CONF.
-    
+
     Returns:
         WSGI application callable.
     """
     from tachyon.api import create_app
-    
+
     # Build Flask config from oslo.config
     flask_config = {
         'AUTH_STRATEGY': conf.api.auth_strategy if conf else 'keystone',
         # Additional config mapping
     }
-    
+
     return create_app(flask_config)
 
 # WSGI callable for gunicorn/uwsgi
@@ -587,15 +587,15 @@ from tachyon.conf import CONF
 def create_app(config=None):
     """Create Flask application with oslo.config integration."""
     app = Flask(__name__)
-    
+
     # Map oslo.config values to Flask config
     app.config['AUTH_STRATEGY'] = CONF.api.auth_strategy
     app.config['MAX_LIMIT'] = CONF.api.max_limit
-    
+
     # Allow test overrides
     if config:
         app.config.update(config)
-    
+
     return app
 ```
 
@@ -612,12 +612,12 @@ from oslo_middleware import request_id
 def create_app(config=None):
     app = Flask(__name__)
     # ... blueprint registration ...
-    
+
     # Wrap with oslo middleware (applied in reverse order)
     app.wsgi_app = request_id.RequestId(app.wsgi_app)
     app.wsgi_app = cors.CORS(app.wsgi_app, CONF)
     app.wsgi_app = healthcheck.Healthcheck(app.wsgi_app, CONF)
-    
+
     return app
 ```
 
@@ -630,10 +630,10 @@ from keystonemiddleware import auth_token
 def create_app(config=None):
     app = Flask(__name__)
     # ... setup ...
-    
+
     if CONF.api.auth_strategy == 'keystone':
         app.wsgi_app = auth_token.AuthProtocol(app.wsgi_app, {})
-    
+
     return app
 ```
 
@@ -648,9 +648,9 @@ from flask import g, request
 
 class TachyonContext(oslo_context.RequestContext):
     """Tachyon-specific request context."""
-    
+
     def __init__(self, user_id=None, project_id=None, roles=None, **kwargs):
-        super().__init__(user_id=user_id, project_id=project_id, 
+        super().__init__(user_id=user_id, project_id=project_id,
                          roles=roles or [], **kwargs)
 
 def before_request():
@@ -697,4 +697,3 @@ Testing infrastructure is detailed in [08-testing/](../08-testing/). Key technol
 - [keystonemiddleware Documentation](https://docs.openstack.org/keystonemiddleware/latest/)
 - [stevedore Documentation](https://docs.openstack.org/stevedore/latest/)
 - [oslotest Documentation](https://docs.openstack.org/oslotest/latest/)
-

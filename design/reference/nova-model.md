@@ -42,8 +42,8 @@ This section describes the primary data model entities used in Nova scheduling.
 
 ### Instance (Virtual Machine)
 
-**Entity Type:** Core scheduling entity  
-**Database Table:** `instances`  
+**Entity Type:** Core scheduling entity
+**Database Table:** `instances`
 **Key Fields:** `uuid`, `host`, `node`, `vm_state`, `flavor`
 
 The central entity representing a guest VM.
@@ -54,74 +54,74 @@ Instance:
   uuid:                     UUID          # external identifier
   user_id:                  string        # Keystone user UUID
   project_id:               string        # Keystone project/tenant UUID
-  
+
   # Image and boot
   image_ref:                string        # Glance image UUID
   kernel_id:                string|null   # kernel image UUID
   ramdisk_id:               string|null   # ramdisk image UUID
-  
+
   # Resource requirements (from flavor)
   memory_mb:                int           # RAM in MB
   vcpus:                    int           # vCPU count
   root_gb:                  int           # root disk size
   ephemeral_gb:             int           # ephemeral disk size
   ephemeral_key_uuid:       UUID|null     # encryption key for ephemeral
-  
+
   # Placement
   host:                     string|null   # compute host name
   node:                     string|null   # hypervisor node (e.g., NUMA node)
   compute_id:               int|null      # FK to ComputeNode
   availability_zone:        string|null   # requested AZ
-  
+
   # State
   vm_state:                 string        # ACTIVE, BUILDING, PAUSED, SUSPENDED, etc.
   task_state:               string|null   # spawning, migrating, resizing, etc.
   power_state:              int           # NOSTATE=0, RUNNING=1, PAUSED=3, etc.
-  
+
   # Flavor
   instance_type_id:         int|null      # FK to flavor (deprecated)
   flavor:                   Flavor        # current flavor object
   old_flavor:               Flavor|null   # flavor before resize
   new_flavor:               Flavor|null   # target flavor for resize
-  
+
   # Identity
   display_name:             string|null   # user-visible name
   display_description:      string|null   # user description
   hostname:                 string|null   # guest hostname
-  
+
   # Networking
   access_ip_v4:             IPv4|null     # primary IPv4
   access_ip_v6:             IPv6|null     # primary IPv6
-  
+
   # Lifecycle
   launched_at:              datetime|null
   terminated_at:            datetime|null
   launched_on:              string|null   # original host
-  
+
   # Configuration
   key_name:                 string|null   # SSH keypair name
   config_drive:             string|null   # config drive config
   user_data:                text|null     # cloud-init user data
-  
+
   # Security
   locked:                   bool          # admin/owner lock
   locked_by:                enum|null     # 'owner' | 'admin'
   hidden:                   bool          # hide from user API
-  
+
   # Architecture
   os_type:                  string|null   # linux, windows, etc.
   architecture:             string|null   # x86_64, aarch64, etc.
   vm_mode:                  string|null   # hvm, xen, etc.
-  
+
   # Devices
   root_device_name:         string|null   # /dev/vda, etc.
   default_ephemeral_device: string|null
   default_swap_device:      string|null
-  
+
   # Scheduling metadata
   reservation_id:           string|null   # batch launch ID
   launch_index:             int|null      # index in batch
-  
+
   # Extended attributes (stored in instance_extra table)
   numa_topology:            InstanceNUMATopology|null
   pci_requests:             InstancePCIRequests|null
@@ -131,7 +131,7 @@ Instance:
   migration_context:        MigrationContext|null
   trusted_certs:            TrustedCerts|null
   resources:                ResourceList|null  # arbitrary resource requests
-  
+
   # Relationships
   metadata:                 dict[str, str]      # user key-value metadata
   system_metadata:          dict[str, str|null] # system key-value metadata
@@ -140,7 +140,7 @@ Instance:
   tags:                     TagList
   keypairs:                 KeyPairList
   fault:                    InstanceFault|null
-  
+
   created_at:               datetime
   updated_at:               datetime
   deleted_at:               datetime|null
@@ -166,8 +166,8 @@ Instance:
 
 ### Flavor (Instance Type)
 
-**Entity Type:** Core scheduling entity  
-**Database Table:** `instance_types` (API DB)  
+**Entity Type:** Core scheduling entity
+**Database Table:** `instance_types` (API DB)
 **Key Fields:** `flavorid`, `memory_mb`, `vcpus`, `root_gb`, `extra_specs`
 
 Defines compute, memory, and storage capacity.
@@ -187,11 +187,11 @@ Flavor:
   disabled:          bool             # disabled flag
   is_public:         bool             # public vs private
   description:       string|null      # flavor description
-  
+
   # Extended attributes
   extra_specs:       dict[str, str]   # key-value scheduling hints
   projects:          list[string]     # allowed projects (if not public)
-  
+
   created_at:        datetime
   updated_at:        datetime
   deleted_at:        datetime|null
@@ -934,8 +934,8 @@ The following legacy property names are automatically mapped to current names:
 
 ### ComputeNode
 
-**Entity Type:** Core scheduling entity  
-**Database Table:** `compute_nodes`  
+**Entity Type:** Core scheduling entity
+**Database Table:** `compute_nodes`
 **Key Fields:** `host`, `vcpus`, `memory_mb`, `hypervisor_type`, `numa_topology`
 
 Represents compute capacity on a hypervisor.
@@ -947,54 +947,54 @@ ComputeNode:
   service_id:             int|null      # FK to Service
   host:                   string        # hostname
   hypervisor_hostname:    string        # libvirt node name
-  
+
   # Capacity (total)
   vcpus:                  int           # total vCPUs
   memory_mb:              int           # total RAM
   local_gb:               int           # total local disk
-  
+
   # Usage (used)
   vcpus_used:             int
   memory_mb_used:         int
   local_gb_used:          int
-  
+
   # Availability (computed)
   free_ram_mb:            int|null
   free_disk_gb:           int|null
   disk_available_least:   int|null      # smallest available disk
-  
+
   # Hypervisor
   hypervisor_type:        string        # QEMU, KVM, VMware, etc.
   hypervisor_version:     int           # version as integer
   host_ip:                IP            # management IP
-  
+
   # CPU architecture & topology
   cpu_info:               JSON          # CPU model, topology, features
   supported_hv_specs:     list[HVSpec]  # supported (arch, hv_type, vm_mode)
-  
+
   # NUMA topology
   numa_topology:          JSON|null     # NUMATopology object serialized
-  
+
   # PCI devices
   pci_device_pools:       PciDevicePoolList|null
-  
+
   # Allocation ratios
   cpu_allocation_ratio:   float         # overcommit ratio for CPU
   ram_allocation_ratio:   float         # overcommit ratio for RAM
   disk_allocation_ratio:  float         # overcommit ratio for disk
-  
+
   # Workload tracking
   running_vms:            int|null      # instance count
   current_workload:       int|null      # active operations count
-  
+
   # Statistics
   stats:                  dict          # arbitrary stats (JSON)
   metrics:                JSON|null     # custom metrics
   extra_resources:        JSON|null     # additional resources
-  
+
   # Placement sync
   mapped:                 int           # synced to Placement (0/1)
-  
+
   created_at:             datetime
   updated_at:             datetime
   deleted_at:             datetime|null
@@ -1025,27 +1025,27 @@ Migration:
   id:                     int
   uuid:                   UUID
   instance_uuid:          UUID          # FK to Instance
-  
+
   # Source
   source_compute:         string|null   # source hostname
   source_node:            string|null   # source node name
-  
+
   # Destination
   dest_compute:           string|null   # dest hostname
   dest_node:              string|null   # dest node name
   dest_compute_id:        int|null      # FK to ComputeNode
   dest_host:              string|null   # dest IP
-  
+
   # Flavor change (for resize)
   old_instance_type_id:   int|null      # old flavor ID
   new_instance_type_id:   int|null      # new flavor ID
-  
+
   # Status
   status:                 string        # pre-migrating, migrating, done, error, etc.
   migration_type:         enum          # 'migration', 'resize', 'live-migration', 'evacuation'
   hidden:                 bool          # hide from API
   cross_cell_move:        bool          # cross-cell migration
-  
+
   # Progress tracking
   memory_total:           int|null      # total memory to transfer (MB)
   memory_processed:       int|null      # memory transferred
@@ -1053,11 +1053,11 @@ Migration:
   disk_total:             int|null      # total disk to transfer (GB)
   disk_processed:         int|null
   disk_remaining:         int|null
-  
+
   # Audit
   user_id:                string|null   # initiating user
   project_id:             string|null   # initiating project
-  
+
   created_at:             datetime
   updated_at:             datetime
   deleted_at:             datetime|null
@@ -1083,42 +1083,42 @@ BlockDeviceMapping:
   id:                       int
   uuid:                     UUID
   instance_uuid:            UUID         # FK to Instance
-  
+
   # Source
   source_type:              enum         # image, volume, snapshot, blank
   image_id:                 UUID|null    # Glance image
   snapshot_id:              UUID|null    # Cinder snapshot
   volume_id:                UUID|null    # Cinder volume
-  
+
   # Destination
   destination_type:         enum         # local, volume
   guest_format:             string|null  # fs format (ext4, swap, etc.)
-  
+
   # Device properties
   device_type:              enum         # disk, cdrom, floppy, lun
   disk_bus:                 string|null  # virtio, scsi, ide, usb, etc.
   device_name:              string|null  # /dev/vdb, etc.
   boot_index:               int|null     # boot order (-1 = no boot)
-  
+
   # Size and behavior
   volume_size:              int|null     # size in GB
   volume_type:              string|null  # Cinder volume type
   delete_on_termination:    bool
   no_device:                bool         # device explicitly removed
-  
+
   # Volume attachment
   attachment_id:            UUID|null    # Cinder attachment UUID
   connection_info:          JSON|null    # iSCSI/RBD connection details
-  
+
   # Encryption
   encrypted:                bool
   encryption_secret_uuid:   UUID|null    # Barbican secret
   encryption_format:        enum|null    # luks, plain
   encryption_options:       string|null  # JSON options
-  
+
   # Metadata
   tag:                      string|null  # device tag
-  
+
   created_at:               datetime
   updated_at:               datetime
   deleted_at:               datetime|null
@@ -1135,7 +1135,7 @@ NUMA topology for an instance (stored in instance_extra).
 InstanceNUMATopology:
   cells:                    list[InstanceNUMACell]
   emulator_threads_policy:  enum|null     # share, isolate
-  
+
 InstanceNUMACell:
   id:                       int           # NUMA cell ID
   cpuset:                   set[int]      # vCPU IDs
@@ -1154,7 +1154,7 @@ Physical NUMA topology of compute host.
 ```
 NUMATopology:
   cells:                    list[NUMACell]
-  
+
 NUMACell:
   id:                       int           # NUMA cell ID
   cpuset:                   set[int]      # CPU IDs in this cell
@@ -1178,26 +1178,26 @@ PciDevice:
   uuid:                     UUID
   compute_node_id:          int           # FK to ComputeNode
   address:                  string        # PCI address (0000:04:00.1)
-  
+
   # Hardware identification
   vendor_id:                string        # PCI vendor ID (8086)
   product_id:               string        # PCI product ID (10ed)
   dev_type:                 enum          # type-PCI, type-PF, type-VF
   dev_id:                   string        # device identifier
-  
+
   # Allocation
   instance_uuid:            UUID|null     # assigned instance
   request_id:               UUID|null     # request that claimed it
   status:                   enum          # available, claimed, allocated
-  
+
   # PCI specifications
   label:                    string        # alias label
   numa_node:                int|null      # NUMA affinity
   parent_addr:              string|null   # parent PF address (for VF)
-  
+
   # Extra metadata (JSON)
   extra_info:               JSON          # {physical_network, capabilities, ...}
-  
+
   created_at:               datetime
   updated_at:               datetime
   deleted_at:               datetime|null
@@ -1241,15 +1241,15 @@ InstanceGroup:
   user_id:                  string
   project_id:               string
   name:                     string
-  
+
   # Policy
   policies:                 list[string]  # affinity, anti-affinity, soft-*
   rules:                    dict          # {max_server_per_host: N}
-  
+
   # Members
   members:                  list[UUID]    # instance UUIDs
   hosts:                    list[string]  # scheduled hosts
-  
+
   created_at:               datetime
   updated_at:               datetime
   deleted_at:               datetime|null
@@ -1282,17 +1282,17 @@ Service:
   host:                     string        # hostname
   binary:                   string        # nova-compute, nova-scheduler, etc.
   topic:                    string        # RPC topic
-  
+
   # Health
   disabled:                 bool          # administratively disabled
   disabled_reason:          string|null
   forced_down:              bool          # forced down by admin
   last_seen_up:             datetime|null
   report_count:             int           # periodic update counter
-  
+
   # Version
   version:                  int           # service version
-  
+
   created_at:               datetime
   updated_at:               datetime
   deleted_at:               datetime|null
@@ -1312,17 +1312,17 @@ RequestSpec:
   image:                    dict          # image properties
   numa_topology:            InstanceNUMATopology|null
   pci_requests:             InstancePCIRequests|null
-  
+
   # Placement query
   requested_resources:      list[ResourceRequest]
   requested_destination:    Destination|null
-  
+
   # Hints
   scheduler_hints:          dict          # user scheduler hints
   availability_zone:        string|null
   force_hosts:              list[string]|null
   force_nodes:              list[string]|null
-  
+
   # Policies
   retry:                    dict          # retry history
   limits:                   dict          # resource limits
@@ -1474,4 +1474,3 @@ tags (resource_id, tag)
 - Firmware: `hw_firmware_type`, `hw_firmware_stateless`
 - OS: `os_type`, `os_distro`, `os_secure_boot`
 - Image: `img_hv_type`, `img_config_drive`, `img_cache_in_nova`
-

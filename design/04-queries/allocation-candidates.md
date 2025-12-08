@@ -201,24 +201,24 @@ Complete query combining all filters.
 MATCH (root:ResourceProvider)
 WHERE NOT ()-[:PARENT_OF]->(root)
   AND COALESCE(root.disabled, false) = false
-  
+
   // Required traits
   AND ALL(t IN $required_traits WHERE (root)-[:HAS_TRAIT]->(:Trait {name: t}))
-  
+
   // Forbidden traits
   AND NONE(t IN $forbidden_traits WHERE (root)-[:HAS_TRAIT]->(:Trait {name: t}))
-  
+
   // member_of aggregates
   AND (size($member_of) = 0 OR EXISTS {
     MATCH (root)-[:MEMBER_OF]->(agg:Aggregate)
     WHERE agg.uuid IN $member_of
   })
-  
+
   // Availability zone
   AND ($az IS NULL OR EXISTS {
     MATCH (root)-[:MEMBER_OF]->(:Aggregate)-[:DEFINES_AZ]->(:AvailabilityZone {name: $az})
   })
-  
+
   // Tenant isolation
   AND NOT EXISTS {
     MATCH (root)-[:MEMBER_OF]->(agg:Aggregate)-[:TENANT_ALLOWED]->(:Project)
@@ -243,4 +243,3 @@ WHERE size(allocs) = size($resources)
 RETURN root.uuid AS provider_uuid, root.name AS provider_name, allocs
 LIMIT $limit
 ```
-

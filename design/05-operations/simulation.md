@@ -154,12 +154,12 @@ WHERE s.status = 'active'
 MATCH (consumer:Consumer {uuid: $consumer_uuid})
       -[alloc:CONSUMES]->(inv:Inventory)
       -[:OF_CLASS]->(rc:ResourceClass)
-      
+
 // Verify consumer is currently on source provider (in global or virtual state)
 MATCH (inv)<-[:HAS_INVENTORY]-(source:ResourceProvider {uuid: $from_provider})
 
 // Get resource amounts for the move
-WITH s, consumer, 
+WITH s, consumer,
      apoc.map.fromPairs(collect([rc.name, alloc.used])) AS resource_amounts
 
 // Check for existing moves of this consumer in session
@@ -172,7 +172,7 @@ WITH s, consumer, resource_amounts, max(existing.sequence) AS last_move_seq
 OPTIONAL MATCH (s)-[:HAS_DELTA]->(last_move:SpeculativeDelta {sequence: last_move_seq})
 WHERE last_move.consumer_uuid = consumer.uuid
 WITH s, consumer, resource_amounts,
-     CASE 
+     CASE
        WHEN last_move IS NOT NULL AND last_move.to_provider <> $from_provider
        THEN false
        ELSE true
@@ -182,7 +182,7 @@ WHERE valid_source = true
 
 // Get next sequence number
 OPTIONAL MATCH (s)-[:HAS_DELTA]->(any_delta:SpeculativeDelta)
-WITH s, consumer, resource_amounts, 
+WITH s, consumer, resource_amounts,
      COALESCE(max(any_delta.sequence), 0) + 1 AS next_seq
 
 // Validate destination has inventory
@@ -391,17 +391,17 @@ MATCH (rp:ResourceProvider)
 
 // Get base allocations
 OPTIONAL MATCH (inv)<-[base_alloc:CONSUMES]-(consumer:Consumer)
-WITH s, rp, inv, 
+WITH s, rp, inv,
      COALESCE(sum(base_alloc.used), 0) AS base_usage,
      collect(DISTINCT consumer.uuid) AS base_consumers
 
 // Get incoming moves (consumers moving TO this provider)
 OPTIONAL MATCH (s)-[:HAS_DELTA]->(incoming:SpeculativeDelta)
-WHERE incoming.to_provider = rp.uuid 
+WHERE incoming.to_provider = rp.uuid
   AND incoming.type IN ['MOVE', 'ALLOCATE']
   AND incoming.consumer_uuid NOT IN base_consumers
 
-// Get outgoing moves (consumers moving FROM this provider)  
+// Get outgoing moves (consumers moving FROM this provider)
 OPTIONAL MATCH (s)-[:HAS_DELTA]->(outgoing:SpeculativeDelta)
 WHERE outgoing.from_provider = rp.uuid
   AND outgoing.type IN ['MOVE', 'DEALLOCATE']
@@ -413,9 +413,9 @@ WITH rp, inv, base_usage,
 
 // Calculate virtual usage
 WITH rp, inv, base_usage,
-     REDUCE(s = 0, d IN incoming_deltas | 
+     REDUCE(s = 0, d IN incoming_deltas |
        s + COALESCE(d.resource_changes[$resource_class], 0)) AS incoming_amount,
-     REDUCE(s = 0, d IN outgoing_deltas | 
+     REDUCE(s = 0, d IN outgoing_deltas |
        s + COALESCE(d.resource_changes[$resource_class], 0)) AS outgoing_amount
 
 WITH rp, inv,
@@ -505,9 +505,9 @@ CALL {
   MATCH (rp:ResourceProvider)
         -[:HAS_INVENTORY]->(inv:Inventory)
         -[:OF_CLASS]->(:ResourceClass {name: $resource_class})
-  
+
   // ... (virtual usage calculation as above)
-  
+
   RETURN rp.uuid AS provider, toFloat(virtual_usage) / capacity AS utilization
 }
 
@@ -585,7 +585,7 @@ OPTIONAL MATCH (s)-[:HAS_DELTA]->(d:SpeculativeDelta)
 MATCH (rp:ResourceProvider)
 WHERE rp.uuid IN [d.from_provider, d.to_provider]
   AND rp.generation > s.base_generation
-WITH is_stale, conflicting_consumers, 
+WITH is_stale, conflicting_consumers,
      collect(DISTINCT rp.uuid) AS conflicting_providers
 
 RETURN is_stale,
@@ -741,9 +741,8 @@ RETURN null
 // During move validation
 WITH ... AS available, ... AS required
 WHERE available < required
-CALL apoc.util.validate(true, 
-  'Insufficient capacity on provider %s: available=%d, required=%d', 
+CALL apoc.util.validate(true,
+  'Insufficient capacity on provider %s: available=%d, required=%d',
   [provider_uuid, available, required])
 RETURN null
 ```
-

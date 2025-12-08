@@ -231,4 +231,3 @@ CALL db.stats.retrieve('INDEX USAGE');
 // Drop unused index
 DROP INDEX index_name IF EXISTS;
 ```
-

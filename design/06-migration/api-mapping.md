@@ -230,4 +230,3 @@ OPTIONAL MATCH (inv)<-[alloc:CONSUMES]-()
 WITH rc.name AS resource_class, COALESCE(sum(alloc.used), 0) AS usage
 RETURN {usages: collect({resource_class: resource_class, usage: usage})} AS result
 ```
-

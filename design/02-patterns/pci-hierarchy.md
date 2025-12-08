@@ -156,4 +156,3 @@ MATCH (vf)-[:HAS_INVENTORY]->(inv)
 WHERE NOT (inv)<-[:CONSUMES]-()
 RETURN host, vf
 ```
-

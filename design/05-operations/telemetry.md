@@ -183,7 +183,7 @@ RETURN host
 ```python
 class TelemetryPlugin(abc.ABC):
     """Abstract interface for telemetry data providers."""
-    
+
     @abc.abstractmethod
     def query_metrics(
         self,
@@ -193,12 +193,12 @@ class TelemetryPlugin(abc.ABC):
     ) -> Dict[str, Dict[str, float]]:
         """Query metrics for providers."""
         pass
-    
+
     @abc.abstractmethod
     def get_utilization(self, provider_uuid: str) -> Dict[str, float]:
         """Get current utilization metrics for a provider."""
         pass
-    
+
     @abc.abstractmethod
     def register_callback(
         self,
@@ -208,4 +208,3 @@ class TelemetryPlugin(abc.ABC):
         """Register callback for telemetry events."""
         pass
 ```
-

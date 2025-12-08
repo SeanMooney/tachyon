@@ -170,4 +170,3 @@ RETURN c
 | OWNED_BY | Consumer | Project | N : 1 |
 | CREATED_BY | Consumer | User | N : 1 |
 | OF_TYPE | Consumer | ConsumerType | N : 0..1 |
-

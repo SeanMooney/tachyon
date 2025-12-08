@@ -113,25 +113,24 @@ WHERE NOT ()-[:PARENT_OF]->(rp)
   // ComputeFilter: not disabled
   AND COALESCE(rp.disabled, false) = false
   AND NOT (rp)-[:HAS_TRAIT]->(:Trait {name: 'COMPUTE_STATUS_DISABLED'})
-  
+
   // ImagePropertiesFilter: architecture
   AND ($hw_architecture IS NULL OR
        (rp)-[:HAS_TRAIT]->(:Trait {name: 'HW_ARCH_' + toUpper($hw_architecture)}))
-  
+
   // ImagePropertiesFilter: hypervisor type
   AND ($img_hv_type IS NULL OR toLower(rp.hypervisor_type) = toLower($img_hv_type))
-  
+
   // ImagePropertiesFilter: VM mode
   AND ($hw_vm_mode IS NULL OR
        (rp)-[:HAS_TRAIT]->(:Trait {name: 'COMPUTE_VM_MODE_' + toUpper($hw_vm_mode)}))
-  
+
   // Image type support
   AND ($disk_format IS NULL OR
        (rp)-[:HAS_TRAIT]->(:Trait {name: 'COMPUTE_IMAGE_TYPE_' + toUpper($disk_format)}))
-  
+
   // Cell enabled
   AND (NOT EXISTS {MATCH (rp)-[:LOCATED_IN]->(cell:Cell) WHERE cell.disabled = true})
 
 RETURN rp
 ```
-

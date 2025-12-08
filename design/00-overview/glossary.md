@@ -62,4 +62,3 @@ section: overview
 | `HAS_TRAIT` | Provider has capability |
 | `MEMBER_OF` | Provider belongs to aggregate |
 | `SHARES_RESOURCES` | Provider shares with another tree |
-

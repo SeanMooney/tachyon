@@ -118,7 +118,7 @@ WITH host, numa, vcpu_inv, mem_inv,
 WHERE vcpu_capacity - vcpu_used >= $required_vcpus
   AND mem_capacity - mem_used >= $required_memory_mb
 
-RETURN host, numa, 
+RETURN host, numa,
        vcpu_capacity - vcpu_used AS available_vcpus,
        mem_capacity - mem_used AS available_memory_mb
 ```
@@ -148,7 +148,7 @@ WITH host, collect({
 }) AS numa_nodes
 
 // Filter to hosts with enough suitable NUMA nodes
-WHERE size([n IN numa_nodes WHERE n.avail_vcpus >= $min_vcpus_per_node 
+WHERE size([n IN numa_nodes WHERE n.avail_vcpus >= $min_vcpus_per_node
                                AND n.avail_mem >= $min_mem_per_node]) >= $numa_nodes
 
 RETURN host, numa_nodes
@@ -162,4 +162,3 @@ MATCH (host:ResourceProvider)-[:PARENT_OF]->(numa:NUMANode)
 WHERE numa.hugepages[$hugepage_size_kb] >= $required_pages
 RETURN host, numa
 ```
-

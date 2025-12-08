@@ -177,4 +177,3 @@ WHERE $thread_policy = 'require' AND size(siblings) > 0
 
 RETURN host, numa, siblings
 ```
-

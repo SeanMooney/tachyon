@@ -32,7 +32,7 @@ MATCH (rp:ResourceProvider)-[:HAS_TRAIT]->(:Trait {name: 'HW_CPU_X86_AVX2'})
 
 // Multiple required traits (AND)
 MATCH (rp:ResourceProvider)
-WHERE ALL(trait_name IN ['HW_CPU_X86_AVX2', 'COMPUTE_VOLUME_MULTI_ATTACH'] 
+WHERE ALL(trait_name IN ['HW_CPU_X86_AVX2', 'COMPUTE_VOLUME_MULTI_ATTACH']
       WHERE (rp)-[:HAS_TRAIT]->(:Trait {name: trait_name}))
 
 // Required traits from parameter list
@@ -53,7 +53,7 @@ WHERE NOT (rp)-[:HAS_TRAIT]->(:Trait {name: 'COMPUTE_STATUS_DISABLED'})
 
 // Multiple forbidden traits (none of them)
 MATCH (rp:ResourceProvider)
-WHERE NONE(trait_name IN ['COMPUTE_STATUS_DISABLED', 'CUSTOM_MAINTENANCE'] 
+WHERE NONE(trait_name IN ['COMPUTE_STATUS_DISABLED', 'CUSTOM_MAINTENANCE']
       WHERE (rp)-[:HAS_TRAIT]->(:Trait {name: trait_name}))
 
 // Forbidden traits from parameter list
@@ -70,7 +70,7 @@ At least one trait from a set must be present.
 ```cypher
 // Any of these traits (OR)
 MATCH (rp:ResourceProvider)
-WHERE ANY(trait_name IN ['HW_CPU_X86_AVX', 'HW_CPU_X86_AVX2', 'HW_CPU_X86_AVX512F'] 
+WHERE ANY(trait_name IN ['HW_CPU_X86_AVX', 'HW_CPU_X86_AVX2', 'HW_CPU_X86_AVX512F']
       WHERE (rp)-[:HAS_TRAIT]->(:Trait {name: trait_name}))
 
 // Using EXISTS
@@ -132,9 +132,9 @@ WHERE NOT ()-[:PARENT_OF]->(rp)
 
 // Soft constraints
 WITH rp,
-     reduce(s = 0.0, p IN $preferred_traits | 
+     reduce(s = 0.0, p IN $preferred_traits |
        s + CASE WHEN (rp)-[:HAS_TRAIT]->(:Trait {name: p.name}) THEN p.weight ELSE 0 END) -
-     reduce(s = 0.0, a IN $avoided_traits | 
+     reduce(s = 0.0, a IN $avoided_traits |
        s + CASE WHEN (rp)-[:HAS_TRAIT]->(:Trait {name: a.name}) THEN a.weight ELSE 0 END)
      AS trait_affinity_score
 
@@ -154,4 +154,3 @@ WHERE NOT ()-[:PARENT_OF]->(root)
   AND ALL(t IN $required_traits WHERE (root)-[:HAS_TRAIT]->(:Trait {name: t}))
 RETURN root
 ```
-

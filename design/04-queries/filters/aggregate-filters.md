@@ -98,8 +98,8 @@ WHERE agg.max_io_ops_per_host IS NOT NULL
 
 // Count I/O-heavy instances on host
 OPTIONAL MATCH (c:Consumer)-[:SCHEDULED_ON]->(host)
-WHERE c.task_state IN ['spawning', 'resize_migrating', 'rebuilding', 
-                       'resize_prep', 'image_snapshot', 'image_backup', 
+WHERE c.task_state IN ['spawning', 'resize_migrating', 'rebuilding',
+                       'resize_prep', 'image_snapshot', 'image_backup',
                        'rescuing', 'unshelving']
 WITH host, agg, count(c) AS current_io_ops
 
@@ -141,13 +141,13 @@ WHERE NOT ()-[:PARENT_OF]->(host)
     MATCH (host)-[:MEMBER_OF]->(agg:Aggregate)-[:TENANT_ALLOWED]->(:Project)
     WHERE NOT (agg)-[:TENANT_ALLOWED]->(:Project {external_id: $project_id})
   }
-  
+
   // Image isolation
   AND NOT EXISTS {
     MATCH (host)-[:MEMBER_OF]->(agg:Aggregate)-[:IMAGE_ALLOWED]->(:Image)
     WHERE NOT (agg)-[:IMAGE_ALLOWED]->(:Image {uuid: $image_uuid})
   }
-  
+
   // Extra specs matching
   AND (
     size(keys($aggregate_extra_specs)) = 0 OR
@@ -202,4 +202,3 @@ WHERE host_is_isolated = image_is_isolated
 
 RETURN host
 ```
-

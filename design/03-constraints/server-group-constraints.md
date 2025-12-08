@@ -137,13 +137,12 @@ WITH sg, target_host, collect(DISTINCT host) AS member_hosts, count(member) AS t
 // Check policy
 WITH sg, target_host, member_hosts, total_members,
      CASE sg.policy
-       WHEN 'affinity' THEN 
+       WHEN 'affinity' THEN
          size(member_hosts) = 0 OR target_host IN member_hosts
-       WHEN 'anti-affinity' THEN 
+       WHEN 'anti-affinity' THEN
          NOT target_host IN member_hosts
        ELSE true  // Soft policies don't filter
      END AS policy_satisfied
 
 RETURN policy_satisfied
 ```
-

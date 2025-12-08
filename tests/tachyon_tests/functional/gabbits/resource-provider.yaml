@@ -1,0 +1,134 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- List Tests ---
+
+- name: list empty providers
+  GET: /resource_providers
+  status: 200
+  response_json_paths:
+    $.resource_providers: []
+
+# --- Create Tests ---
+
+- name: create provider without name fails
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+  status: 400
+  response_json_paths:
+    $.errors[0].status: 400
+    $.errors[0].title: Bad Request
+
+- name: create provider
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+    name: $ENVIRON['RP_NAME']
+  status: 200
+  response_json_paths:
+    $.uuid: $ENVIRON['RP_UUID']
+    $.name: $ENVIRON['RP_NAME']
+    $.generation: 0
+    $.root_provider_uuid: $ENVIRON['RP_UUID']
+    $.parent_provider_uuid: null
+
+# --- Get Tests ---
+
+- name: get provider
+  GET: /resource_providers/$ENVIRON['RP_UUID']
+  status: 200
+  response_json_paths:
+    $.uuid: $ENVIRON['RP_UUID']
+    $.name: $ENVIRON['RP_NAME']
+    $.root_provider_uuid: $ENVIRON['RP_UUID']
+    $.parent_provider_uuid: null
+
+- name: get nonexistent provider
+  GET: /resource_providers/nonexistent-uuid
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+    $.errors[0].title: Not Found
+
+# --- Update Tests ---
+
+- name: update provider without generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    name: updated-name
+  status: 400
+  response_json_paths:
+    $.errors[0].status: 400
+
+- name: update provider with wrong generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    name: updated-name
+    generation: 999
+  status: 409
+  response_json_paths:
+    $.errors[0].status: 409
+    $.errors[0].title: Resource Provider Generation Conflict
+
+- name: update provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    name: updated-name
+    generation: 0
+  status: 200
+  response_json_paths:
+    $.name: updated-name
+    $.generation: 1
+
+# --- List with filters ---
+
+- name: list providers after creation
+  GET: /resource_providers
+  status: 200
+  response_json_paths:
+    $.resource_providers.`len`: 1
+
+- name: list providers with name filter
+  GET: /resource_providers?name=updated
+  status: 200
+  response_json_paths:
+    $.resource_providers.`len`: 1
+
+- name: list providers with no match
+  GET: /resource_providers?name=nonexistent
+  status: 200
+  response_json_paths:
+    $.resource_providers: []
+
+# --- Delete Tests ---
+
+- name: delete nonexistent provider
+  DELETE: /resource_providers/nonexistent-uuid
+  status: 404
+
+- name: delete provider
+  DELETE: /resource_providers/$ENVIRON['RP_UUID']
+  status: 204
+
+- name: verify deleted
+  GET: /resource_providers/$ENVIRON['RP_UUID']
+  status: 404

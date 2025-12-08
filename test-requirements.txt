@@ -1,0 +1,21 @@
+# Testing framework
+fixtures>=4.1.0
+testtools>=2.6.0
+stestr>=4.1.0
+oslotest>=4.5.0
+
+# Gabbi API testing
+gabbi>=3.3.0
+wsgi-intercept>=1.13.0
+
+# Neo4j testing
+testcontainers[neo4j]>=4.6.0
+
+# Coverage
+coverage>=7.4.0
+
+# HTTP client
+requests>=2.31.0
+
+# Linting (also in pre-commit)
+ruff>=0.8.0

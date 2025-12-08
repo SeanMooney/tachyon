@@ -74,7 +74,7 @@ WHERE ALL(t IN $required WHERE (rp)-[:HAS_TRAIT]->(:Trait {name: t}))
 AND NONE(t IN $forbidden WHERE (rp)-[:HAS_TRAIT]->(:Trait {name: t}))
 
 // Soft trait scoring
-reduce(s = 0.0, p IN preferred | 
+reduce(s = 0.0, p IN preferred |
   s + CASE WHEN (rp)-[:HAS_TRAIT]->(:Trait {name: p.name}) THEN p.weight ELSE 0 END)
 ```
 
@@ -115,4 +115,3 @@ reduce(s = 0.0, p IN preferred |
 | CONSUMES | 0..N : 0..N |
 | HAS_TRAIT | 0..N : 0..N |
 | MEMBER_OF | 0..N : 0..N |
-

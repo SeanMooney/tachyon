@@ -35,9 +35,9 @@ WITH host, capacity - used AS free_ram_mb
 // Normalize: (value - min) / (max - min)
 WITH collect({host: host, free_ram: free_ram_mb}) AS all_hosts
 WITH all_hosts,
-     reduce(min_val = all_hosts[0].free_ram, h IN all_hosts | 
+     reduce(min_val = all_hosts[0].free_ram, h IN all_hosts |
             CASE WHEN h.free_ram < min_val THEN h.free_ram ELSE min_val END) AS min_ram,
-     reduce(max_val = all_hosts[0].free_ram, h IN all_hosts | 
+     reduce(max_val = all_hosts[0].free_ram, h IN all_hosts |
             CASE WHEN h.free_ram > max_val THEN h.free_ram ELSE max_val END) AS max_ram
 
 UNWIND all_hosts AS h
@@ -110,8 +110,8 @@ WHERE NOT ()-[:PARENT_OF]->(host)
 
 // Count instances in I/O heavy states
 OPTIONAL MATCH (consumer:Consumer)-[:SCHEDULED_ON]->(host)
-WHERE consumer.task_state IN ['spawning', 'resize_migrating', 'rebuilding', 
-                               'resize_prep', 'image_snapshot', 'image_backup', 
+WHERE consumer.task_state IN ['spawning', 'resize_migrating', 'rebuilding',
+                               'resize_prep', 'image_snapshot', 'image_backup',
                                'rescuing', 'unshelving']
 
 WITH host, count(consumer) AS io_ops
@@ -204,4 +204,3 @@ RETURN host, free_ram, free_vcpus, io_ops, total_weight
 ORDER BY total_weight DESC
 LIMIT $host_subset_size
 ```
-

@@ -206,7 +206,7 @@ MATCH (s:SimulationSession {id: $session_id})
 MATCH (consumer:Consumer {uuid: $instance_uuid})
       -[alloc:CONSUMES]->(inv)
       -[:OF_CLASS]->(rc:ResourceClass)
-      
+
 // Get current resource amounts
 WITH s, consumer, collect({resource: rc.name, amount: alloc.used}) AS resources
 
@@ -352,28 +352,28 @@ The Tachyon client API should mirror Watcher's model interface:
 ```python
 class TachyonClusterModel:
     """Tachyon-backed cluster model compatible with Watcher strategies."""
-    
+
     def __init__(self, tachyon_client, session_id=None):
         self.client = tachyon_client
         self.session_id = session_id  # None = query global state
-    
+
     def get_all_compute_nodes(self) -> Dict[str, ComputeNode]:
         """Get all compute nodes from Tachyon."""
         # Query ResourceProviders with compute trait
         pass
-    
+
     def get_node_by_uuid(self, uuid: str) -> ComputeNode:
         """Get a specific compute node."""
         pass
-    
+
     def get_instance_by_uuid(self, uuid: str) -> Instance:
         """Get a specific instance."""
         pass
-    
+
     def get_node_instances(self, node: ComputeNode) -> List[Instance]:
         """Get all instances on a compute node."""
         pass
-    
+
     def migrate_instance(
         self,
         instance: Instance,
@@ -382,7 +382,7 @@ class TachyonClusterModel:
     ) -> bool:
         """
         Migrate instance between nodes.
-        
+
         If session_id is set, records a speculative delta.
         If session_id is None, performs actual migration in global state.
         """
@@ -390,11 +390,11 @@ class TachyonClusterModel:
             return self._record_move_delta(instance, source_node, destination_node)
         else:
             return self._commit_migration(instance, source_node, destination_node)
-    
+
     def get_node_used_resources(self, node: ComputeNode) -> Dict[str, int]:
         """Get used resources, considering session deltas if applicable."""
         pass
-    
+
     def get_node_free_resources(self, node: ComputeNode) -> Dict[str, int]:
         """Get free resources, considering session deltas if applicable."""
         pass
@@ -408,25 +408,25 @@ To maintain backward compatibility with existing Watcher strategies, provide a N
 class TachyonNetworkXAdapter(nx.DiGraph):
     """
     Adapter that presents Tachyon data as a NetworkX DiGraph.
-    
+
     Provides compatibility with existing Watcher strategies that
     directly access the NetworkX graph structure.
     """
-    
+
     def __init__(self, tachyon_model: TachyonClusterModel):
         super().__init__()
         self._tachyon = tachyon_model
         self._cache = {}
         self._dirty = False
-    
+
     def nodes(self, data=False):
         """Return nodes, fetching from Tachyon if needed."""
         pass
-    
+
     def add_edge(self, u, v, **attr):
         """Record edge addition as delta if in simulation mode."""
         pass
-    
+
     def remove_edge(self, u, v):
         """Record edge removal as delta if in simulation mode."""
         pass
@@ -441,7 +441,7 @@ When Watcher starts, the collectors populate Tachyon instead of local NetworkX:
 ```python
 class TachyonNovaCollector(NovaClusterDataModelCollector):
     """Nova collector that populates Tachyon instead of local model."""
-    
+
     def execute(self):
         builder = TachyonNovaModelBuilder(self.osc, self.tachyon_client)
         return builder.execute(self._data_model_scope)
@@ -454,7 +454,7 @@ Notification handlers update Tachyon in real-time:
 ```python
 class TachyonVersionedNotification(VersionedNotification):
     """Handle Nova notifications by updating Tachyon."""
-    
+
     def instance_update(self, payload):
         """Update instance in Tachyon."""
         self.tachyon_client.update_consumer(
@@ -502,4 +502,3 @@ WHERE available >= $min_available
 RETURN rp.uuid, available
 ORDER BY available DESC
 ```
-

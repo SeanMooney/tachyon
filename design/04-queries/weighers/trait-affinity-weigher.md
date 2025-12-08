@@ -36,16 +36,16 @@ WHERE NOT ()-[:PARENT_OF]->(host)
 // Calculate score for preferred traits (bonus for having them)
 WITH host,
      reduce(preferred = 0.0, p IN $preferred_traits |
-       preferred + CASE WHEN (host)-[:HAS_TRAIT]->(:Trait {name: p.name}) 
-                        THEN COALESCE(p.weight, 1.0) 
+       preferred + CASE WHEN (host)-[:HAS_TRAIT]->(:Trait {name: p.name})
+                        THEN COALESCE(p.weight, 1.0)
                         ELSE 0.0 END
      ) AS preferred_score
 
 // Calculate penalty for avoided traits (penalty for having them)
 WITH host, preferred_score,
      reduce(avoided = 0.0, a IN $avoided_traits |
-       avoided + CASE WHEN (host)-[:HAS_TRAIT]->(:Trait {name: a.name}) 
-                      THEN COALESCE(a.weight, 1.0) 
+       avoided + CASE WHEN (host)-[:HAS_TRAIT]->(:Trait {name: a.name})
+                      THEN COALESCE(a.weight, 1.0)
                       ELSE 0.0 END
      ) AS avoided_penalty
 
@@ -54,16 +54,16 @@ WITH host, preferred_score, avoided_penalty,
      (preferred_score - avoided_penalty) AS raw_trait_score
 
 // Normalize across all hosts for fair weighing
-WITH collect({host: host, raw_score: raw_trait_score, 
+WITH collect({host: host, raw_score: raw_trait_score,
               preferred: preferred_score, avoided: avoided_penalty}) AS all_hosts
 WITH all_hosts,
-     reduce(min_s = all_hosts[0].raw_score, h IN all_hosts | 
+     reduce(min_s = all_hosts[0].raw_score, h IN all_hosts |
             CASE WHEN h.raw_score < min_s THEN h.raw_score ELSE min_s END) AS min_score,
-     reduce(max_s = all_hosts[0].raw_score, h IN all_hosts | 
+     reduce(max_s = all_hosts[0].raw_score, h IN all_hosts |
             CASE WHEN h.raw_score > max_s THEN h.raw_score ELSE max_s END) AS max_score
 
 UNWIND all_hosts AS h
-WITH h.host AS host, h.raw_score AS raw_score, 
+WITH h.host AS host, h.raw_score AS raw_score,
      h.preferred AS preferred_score, h.avoided AS avoided_penalty,
      CASE WHEN max_score = min_score THEN 0.5
           ELSE toFloat(h.raw_score - min_score) / (max_score - min_score)
@@ -105,11 +105,11 @@ WHERE agg.trait_weight_multiplier IS NOT NULL
 WITH host, collect(agg.trait_weight_multiplier) AS agg_multipliers
 
 // Use minimum aggregate multiplier, fall back to global
-WITH host, 
-     CASE WHEN size(agg_multipliers) > 0 
-          THEN reduce(m = agg_multipliers[0], x IN agg_multipliers | 
+WITH host,
+     CASE WHEN size(agg_multipliers) > 0
+          THEN reduce(m = agg_multipliers[0], x IN agg_multipliers |
                       CASE WHEN x < m THEN x ELSE m END)
-          ELSE $trait_weight_multiplier 
+          ELSE $trait_weight_multiplier
      END AS effective_multiplier
 
 // Calculate trait scores
@@ -135,8 +135,8 @@ OPTIONAL MATCH (flavor)-[req:REQUIRES_TRAIT]->(trait:Trait)
 WHERE req.constraint IN ['preferred', 'avoided']
 
 WITH collect({
-  name: trait.name, 
-  constraint: req.constraint, 
+  name: trait.name,
+  constraint: req.constraint,
   weight: COALESCE(req.weight, 1.0)
 }) AS soft_traits
 
@@ -168,4 +168,3 @@ ORDER BY trait_affinity_weight DESC
 | `trait:CUSTOM_MAINTENANCE=avoided:5.0` | Avoid hosts in maintenance window |
 | `trait:HW_CPU_X86_AVX512F=preferred:1.0` | Prefer newer hardware features |
 | `trait:CUSTOM_HIGH_LOAD=avoided:3.0` | Avoid heavily loaded hosts |
-

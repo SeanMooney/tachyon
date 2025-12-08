@@ -170,4 +170,3 @@ Virtual GPU type provider.
                            │
                            └──[:HAS_TRAIT]──► (:Trait {name: 'CUSTOM_VGPU_NVIDIA_35'})
 ```
-

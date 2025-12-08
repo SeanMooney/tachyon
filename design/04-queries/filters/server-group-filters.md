@@ -86,7 +86,7 @@ WHERE NOT ()-[:PARENT_OF]->(candidate)
 
 // Get current group state
 OPTIONAL MATCH (sg)-[:HAS_MEMBER]->(member:Consumer)-[:SCHEDULED_ON]->(host:ResourceProvider)
-WITH sg, candidate, 
+WITH sg, candidate,
      collect(DISTINCT host) AS member_hosts,
      count(CASE WHEN host = candidate THEN 1 END) AS count_on_candidate
 
@@ -149,7 +149,7 @@ WITH candidate, sg, collect(DISTINCT host) AS member_hosts
 
 // Apply filter based on policy
 WITH candidate, sg, member_hosts,
-     CASE 
+     CASE
        WHEN sg IS NULL THEN true  // No group, no constraint
        WHEN sg.policy = 'affinity' THEN
          size(member_hosts) = 0 OR candidate IN member_hosts
@@ -162,4 +162,3 @@ WHERE valid
 
 RETURN candidate
 ```
-

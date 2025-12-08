@@ -46,23 +46,23 @@ from testcontainers.neo4j import Neo4jContainer
 
 class Neo4jDatabase(fixtures.Fixture):
     """Provides an isolated Neo4j database for testing.
-    
+
     Attributes:
         driver: Neo4j driver for database operations
         uri: Bolt connection URI
     """
-    
+
     # Container reuse for performance (optional)
     _shared_container = None
     _container_reuse = True
-    
+
     def __init__(self, conf_fixture=None):
         super().__init__()
         self.conf_fixture = conf_fixture
         self._container = None
         self.driver = None
         self.uri = None
-    
+
     def _setUp(self):
         """Start or reuse Neo4j container."""
         if self._container_reuse and Neo4jDatabase._shared_container:
@@ -74,37 +74,37 @@ class Neo4jDatabase(fixtures.Fixture):
             self._container = Neo4jContainer("neo4j:5-community")
             self._container.with_env("NEO4J_AUTH", "none")
             self._container.start()
-            
+
             if self._container_reuse:
                 Neo4jDatabase._shared_container = self._container
-        
+
         # Get connection details
         self.uri = self._container.get_connection_url()
-        
+
         # Configure oslo.config if provided
         if self.conf_fixture:
             self.conf_fixture.config(
                 uri=self.uri,
                 group='neo4j_database'
             )
-        
+
         # Create driver
         from neo4j import GraphDatabase
         self.driver = GraphDatabase.driver(self.uri)
-        
+
         # Create schema
         self._create_schema()
-        
+
         # Register cleanup
         self.addCleanup(self._cleanup)
-    
+
     def _create_schema(self):
         """Create database schema (indexes, constraints)."""
         from tachyon.db import schema
         with self.driver.session() as session:
             for statement in schema.SCHEMA_STATEMENTS:
                 session.run(statement)
-    
+
     def _clear_database(self):
         """Clear all data while preserving schema."""
         from neo4j import GraphDatabase
@@ -114,16 +114,16 @@ class Neo4jDatabase(fixtures.Fixture):
                 session.run("MATCH (n) DETACH DELETE n")
         finally:
             driver.close()
-    
+
     def _cleanup(self):
         """Clean up database resources."""
         if self.driver:
             self.driver.close()
-        
+
         # Don't stop shared container
         if not self._container_reuse and self._container:
             self._container.stop()
-    
+
     @classmethod
     def stop_shared_container(cls):
         """Stop shared container (call at end of test session)."""
@@ -166,20 +166,20 @@ SCHEMA_STATEMENTS = [
     # Uniqueness constraints (also create indexes)
     "CREATE CONSTRAINT resource_provider_uuid IF NOT EXISTS "
     "FOR (rp:ResourceProvider) REQUIRE rp.uuid IS UNIQUE",
-    
+
     "CREATE CONSTRAINT consumer_uuid IF NOT EXISTS "
     "FOR (c:Consumer) REQUIRE c.uuid IS UNIQUE",
-    
+
     "CREATE CONSTRAINT trait_name IF NOT EXISTS "
     "FOR (t:Trait) REQUIRE t.name IS UNIQUE",
-    
+
     "CREATE CONSTRAINT resource_class_name IF NOT EXISTS "
     "FOR (rc:ResourceClass) REQUIRE rc.name IS UNIQUE",
-    
+
     # Additional indexes for query performance
     "CREATE INDEX resource_provider_name IF NOT EXISTS "
     "FOR (rp:ResourceProvider) ON (rp.name)",
-    
+
     "CREATE INDEX aggregate_uuid IF NOT EXISTS "
     "FOR (a:Aggregate) ON (a.uuid)",
 ]
@@ -219,18 +219,18 @@ from oslo_utils import uuidutils
 
 def create_resource_provider(driver, name, uuid=None, parent_uuid=None):
     """Create a resource provider.
-    
+
     Args:
         driver: Neo4j driver
         name: Provider name
         uuid: Provider UUID (generated if not provided)
         parent_uuid: Parent provider UUID (optional)
-    
+
     Returns:
         Dict with provider properties
     """
     uuid = uuid or uuidutils.generate_uuid()
-    
+
     with driver.session() as session:
         if parent_uuid:
             result = session.run("""
@@ -252,21 +252,21 @@ def create_resource_provider(driver, name, uuid=None, parent_uuid=None):
                 })
                 RETURN rp
             """, uuid=uuid, name=name)
-        
+
         record = result.single()
         return dict(record["rp"])
 
 
 def add_inventory(driver, rp_uuid, resource_class, total, **kwargs):
     """Add inventory to a resource provider.
-    
+
     Args:
         driver: Neo4j driver
         rp_uuid: Resource provider UUID
         resource_class: Resource class name (e.g., 'VCPU')
         total: Total amount of resource
         **kwargs: Optional inventory attributes
-    
+
     Returns:
         Dict with inventory properties
     """
@@ -278,7 +278,7 @@ def add_inventory(driver, rp_uuid, resource_class, total, **kwargs):
         'allocation_ratio': 1.0,
     }
     defaults.update(kwargs)
-    
+
     with driver.session() as session:
         result = session.run("""
             MATCH (rp:ResourceProvider {uuid: $rp_uuid})
@@ -294,14 +294,14 @@ def add_inventory(driver, rp_uuid, resource_class, total, **kwargs):
             RETURN inv
         """, rp_uuid=rp_uuid, resource_class=resource_class,
             total=total, **defaults)
-        
+
         record = result.single()
         return dict(record["inv"])
 
 
 def set_traits(driver, rp_uuid, traits):
     """Set traits on a resource provider.
-    
+
     Args:
         driver: Neo4j driver
         rp_uuid: Resource provider UUID
@@ -313,7 +313,7 @@ def set_traits(driver, rp_uuid, traits):
             MATCH (rp:ResourceProvider {uuid: $rp_uuid})-[r:HAS_TRAIT]->()
             DELETE r
         """, rp_uuid=rp_uuid)
-        
+
         # Add new traits
         for trait_name in traits:
             session.run("""
@@ -325,20 +325,20 @@ def set_traits(driver, rp_uuid, traits):
 
 def create_consumer(driver, uuid=None, project_id=None, user_id=None):
     """Create a consumer.
-    
+
     Args:
         driver: Neo4j driver
         uuid: Consumer UUID (generated if not provided)
         project_id: Project ID (generated if not provided)
         user_id: User ID (generated if not provided)
-    
+
     Returns:
         Dict with consumer properties
     """
     uuid = uuid or uuidutils.generate_uuid()
     project_id = project_id or uuidutils.generate_uuid()
     user_id = user_id or uuidutils.generate_uuid()
-    
+
     with driver.session() as session:
         result = session.run("""
             MERGE (p:Project {uuid: $project_id})
@@ -351,14 +351,14 @@ def create_consumer(driver, uuid=None, project_id=None, user_id=None):
             CREATE (c)-[:CREATED_BY]->(u)
             RETURN c
         """, uuid=uuid, project_id=project_id, user_id=user_id)
-        
+
         record = result.single()
         return dict(record["c"])
 
 
 def set_allocations(driver, consumer_uuid, allocations):
     """Set allocations for a consumer.
-    
+
     Args:
         driver: Neo4j driver
         consumer_uuid: Consumer UUID
@@ -370,7 +370,7 @@ def set_allocations(driver, consumer_uuid, allocations):
             MATCH (c:Consumer {uuid: $consumer_uuid})-[r:CONSUMES]->()
             DELETE r
         """, consumer_uuid=consumer_uuid)
-        
+
         # Create new allocations
         for alloc in allocations:
             session.run("""
@@ -397,7 +397,7 @@ from tachyon_tests.unit import base
 
 
 class TestResourceProvider(base.TestCase):
-    
+
     def setUp(self):
         super().setUp()
         self.mock_driver = mock.MagicMock()
@@ -405,7 +405,7 @@ class TestResourceProvider(base.TestCase):
         self.mock_driver.session.return_value.__enter__ = mock.MagicMock(
             return_value=self.mock_session
         )
-    
+
     def test_create_provider(self):
         # Test with mocked database
         pass
@@ -421,28 +421,28 @@ from tachyon_tests.functional.db import test_base as tb
 
 
 class TestResourceProvider(base.TestCase):
-    
+
     def test_create_provider(self):
         # Use real Neo4j via fixture
         rp = tb.create_resource_provider(
             self.db.driver,
             name='test-rp'
         )
-        
+
         self.assertIsNotNone(rp['uuid'])
-        
+
     def test_provider_hierarchy(self):
         parent = tb.create_resource_provider(
             self.db.driver,
             name='parent'
         )
-        
+
         child = tb.create_resource_provider(
             self.db.driver,
             name='child',
             parent_uuid=parent['uuid']
         )
-        
+
         # Verify relationship
         with self.db.driver.session() as session:
             result = session.run("""
@@ -451,7 +451,7 @@ class TestResourceProvider(base.TestCase):
                       (child:ResourceProvider {uuid: $child_uuid})
                 RETURN child
             """, parent_uuid=parent['uuid'], child_uuid=child['uuid'])
-            
+
             self.assertEqual(result.single()["child"]["name"], "child")
 ```
 
@@ -530,4 +530,3 @@ atexit.register(database.Neo4jDatabase.stop_shared_container)
 - [testcontainers-python](https://testcontainers-python.readthedocs.io/)
 - [Neo4j Python Driver](https://neo4j.com/docs/python-manual/current/)
 - [neo4j-python-driver tests](../../ref/src/neo4j-python-driver/tests/) - Integration test patterns
-

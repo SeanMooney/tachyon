@@ -142,4 +142,3 @@ RETURN root, provider, inv, rc
 - Each provider has at most one parent
 - Root providers have no incoming PARENT_OF
 - Deleting a provider requires deleting children first
-

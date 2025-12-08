@@ -556,4 +556,3 @@ created, preventing inconsistent updates from stale optimization plans.
 As a Watcher developer, I want to know which specific consumers or providers
 have been modified when a commit conflict is detected, so that I can decide
 whether to retry, rebase, or abandon the optimization plan.
-

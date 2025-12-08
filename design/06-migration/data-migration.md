@@ -29,7 +29,7 @@ Scripts and procedures for migrating from OpenStack Placement to Tachyon.
 ```python
 def migrate_placement_to_tachyon(placement_client, neo4j_driver):
     """Migrate all Placement data to Tachyon Neo4j."""
-    
+
     # 1. Migrate resource classes
     for rc in placement_client.get_resource_classes():
         with neo4j_driver.session() as session:
@@ -38,7 +38,7 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                 SET rc.standard = $standard,
                     rc.created_at = datetime()
             """, name=rc.name, standard=not rc.name.startswith('CUSTOM_'))
-    
+
     # 2. Migrate traits
     for trait in placement_client.get_traits():
         with neo4j_driver.session() as session:
@@ -47,11 +47,11 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                 SET t.standard = $standard,
                     t.created_at = datetime()
             """, name=trait.name, standard=not trait.name.startswith('CUSTOM_'))
-    
+
     # 3. Migrate resource providers (with hierarchy)
     providers = placement_client.get_resource_providers()
     sorted_providers = topological_sort_by_parent(providers)
-    
+
     for rp in sorted_providers:
         with neo4j_driver.session() as session:
             session.run("""
@@ -61,7 +61,7 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                     generation: $generation,
                     created_at: datetime()
                 })
-                
+
                 WITH rp
                 OPTIONAL MATCH (parent:ResourceProvider {uuid: $parent_uuid})
                 FOREACH (_ IN CASE WHEN parent IS NOT NULL THEN [1] ELSE [] END |
@@ -69,7 +69,7 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                 )
             """, uuid=rp.uuid, name=rp.name, generation=rp.generation,
                  parent_uuid=rp.parent_provider_uuid)
-    
+
     # 4. Migrate inventories
     for rp in providers:
         inventories = placement_client.get_inventories(rp.uuid)
@@ -88,7 +88,7 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                         created_at: datetime()
                     })-[:OF_CLASS]->(rc)
                 """, rp_uuid=rp.uuid, rc_name=rc_name, **inv)
-    
+
     # 5. Migrate trait associations
     for rp in providers:
         traits = placement_client.get_provider_traits(rp.uuid)
@@ -99,7 +99,7 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                 MATCH (t:Trait {name: trait_name})
                 CREATE (rp)-[:HAS_TRAIT]->(t)
             """, rp_uuid=rp.uuid, traits=traits)
-    
+
     # 6. Migrate aggregates
     aggregates = placement_client.get_aggregates()
     for agg_uuid in aggregates:
@@ -108,13 +108,13 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
             session.run("""
                 MERGE (agg:Aggregate {uuid: $agg_uuid})
                 ON CREATE SET agg.created_at = datetime()
-                
+
                 WITH agg
                 UNWIND $members AS member_uuid
                 MATCH (rp:ResourceProvider {uuid: member_uuid})
                 CREATE (rp)-[:MEMBER_OF]->(agg)
             """, agg_uuid=agg_uuid, members=members)
-    
+
     # 7. Migrate allocations
     for consumer_uuid in placement_client.get_consumer_uuids():
         alloc_data = placement_client.get_allocations(consumer_uuid)
@@ -123,12 +123,12 @@ def migrate_placement_to_tachyon(placement_client, neo4j_driver):
                 MERGE (c:Consumer {uuid: $consumer_uuid})
                 ON CREATE SET c.generation = $generation,
                               c.created_at = datetime()
-                
+
                 MERGE (proj:Project {external_id: $project_id})
                 MERGE (user:User {external_id: $user_id})
                 MERGE (c)-[:OWNED_BY]->(proj)
                 MERGE (c)-[:CREATED_BY]->(user)
-                
+
                 WITH c
                 UNWIND $allocations AS alloc
                 MATCH (rp:ResourceProvider {uuid: alloc.rp_uuid})
@@ -180,9 +180,8 @@ RETURN rp.generation AS tachyon_generation
 ```cypher
 // Delete all migrated data (use with caution!)
 MATCH (n)
-WHERE n:ResourceProvider OR n:Inventory OR n:Consumer 
+WHERE n:ResourceProvider OR n:Inventory OR n:Consumer
    OR n:Trait OR n:ResourceClass OR n:Aggregate
    OR n:Project OR n:User
 DETACH DELETE n
 ```
-

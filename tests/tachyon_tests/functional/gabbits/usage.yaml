@@ -1,0 +1,89 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- Setup ---
+
+- name: setup provider
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+    name: usage-rp
+  status: 200
+
+- name: setup inventories for usage
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 0
+    inventories:
+      VCPU:
+        total: 8
+      MEMORY_MB:
+        total: 16384
+  status: 200
+
+# --- Error Cases ---
+
+- name: get usage for nonexistent provider
+  GET: /resource_providers/nonexistent-uuid/usages
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+
+# --- Empty Usage ---
+
+- name: get usage with no allocations
+  GET: /resource_providers/$ENVIRON['RP_UUID']/usages
+  status: 200
+  response_json_paths:
+    $.usages.VCPU: 0
+    $.usages.MEMORY_MB: 0
+
+# --- Create Allocation ---
+
+- name: put allocation for usage
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: 0
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 2
+          MEMORY_MB: 1024
+  status: 200
+
+# --- Verify Usage ---
+
+- name: get usage with allocations
+  GET: /resource_providers/$ENVIRON['RP_UUID']/usages
+  status: 200
+  response_json_paths:
+    $.usages.VCPU: 2
+    $.usages.MEMORY_MB: 1024
+    $.resource_provider_generation: 1
+
+# --- Delete Allocation and Verify ---
+
+- name: delete allocations
+  DELETE: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 204
+
+- name: get usage after deletion
+  GET: /resource_providers/$ENVIRON['RP_UUID']/usages
+  status: 200
+  response_json_paths:
+    $.usages.VCPU: 0
+    $.usages.MEMORY_MB: 0

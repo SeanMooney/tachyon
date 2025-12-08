@@ -1,0 +1,126 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- Setup ---
+
+- name: create provider for inventory
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+    name: inv-rp
+  status: 200
+
+# --- Error Cases ---
+
+- name: get inventories on nonexistent provider
+  GET: /resource_providers/nonexistent-uuid/inventories
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+
+- name: put inventories without generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    inventories:
+      VCPU:
+        total: 8
+  status: 400
+  response_json_paths:
+    $.errors[0].status: 400
+
+- name: put inventories with wrong generation fails
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 999
+    inventories:
+      VCPU:
+        total: 8
+  status: 409
+  response_json_paths:
+    $.errors[0].status: 409
+
+# --- Successful Operations ---
+
+- name: put inventories
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 0
+    inventories:
+      VCPU:
+        total: 8
+        reserved: 0
+        min_unit: 1
+        max_unit: 8
+        step_size: 1
+        allocation_ratio: 1.0
+      MEMORY_MB:
+        total: 16384
+  status: 200
+  response_json_paths:
+    $.resource_provider_generation: 1
+
+- name: get inventories
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  status: 200
+  response_json_paths:
+    $.resource_provider_generation: 1
+    $.inventories.VCPU.total: 8
+    $.inventories.MEMORY_MB.total: 16384
+
+# --- Single Inventory Operations ---
+
+- name: get single inventory
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories/VCPU
+  status: 200
+  response_json_paths:
+    $.inventory.total: 8
+
+- name: get nonexistent inventory
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories/DISK_GB
+  status: 404
+  response_json_paths:
+    $.errors[0].status: 404
+
+- name: put single inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories/DISK_GB
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 1
+    inventory:
+      total: 1000
+  status: 200
+  response_json_paths:
+    $.resource_provider_generation: 2
+
+- name: verify new inventory exists
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories/DISK_GB
+  status: 200
+  response_json_paths:
+    $.inventory.total: 1000
+
+# --- Delete ---
+
+- name: delete single inventory
+  DELETE: /resource_providers/$ENVIRON['RP_UUID']/inventories/DISK_GB
+  status: 204
+
+- name: verify deleted inventory
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories/DISK_GB
+  status: 404

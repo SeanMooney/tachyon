@@ -154,4 +154,3 @@ RETURN inv
 | PARENT_OF | ResourceProvider | ResourceProvider | 0..1 : 0..N |
 | HAS_INVENTORY | ResourceProvider | Inventory | 1 : 0..N |
 | OF_CLASS | Inventory | ResourceClass | N : 1 |
-

@@ -65,4 +65,3 @@ Traits and aggregates use direct relationships rather than the `MISC_SHARES_VIA_
 // Instead of checking for trait + aggregate membership
 (:ResourceProvider)-[:SHARES_RESOURCES]->(:ResourceProvider)
 ```
-

@@ -449,4 +449,3 @@ Session data can be configured for:
 
 - **Memory-only**: Fastest, but lost on restart (suitable for short-lived audits)
 - **Disk-backed**: Persisted, slower, but survives restarts (for long-running optimizations)
-

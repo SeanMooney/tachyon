@@ -207,4 +207,3 @@ RETURN rp
 
 // 3. If no rows returned, generation changed - retry from step 1
 ```
-

@@ -46,13 +46,13 @@ Using REQUIRES_TRAIT relationship:
 ```cypher
 // Preferred trait with weight
 CREATE (f:Flavor)-[:REQUIRES_TRAIT {
-  constraint: 'preferred', 
+  constraint: 'preferred',
   weight: 2.0
 }]->(t:Trait {name: 'STORAGE_DISK_SSD'})
 
 // Avoided trait with weight
 CREATE (f:Flavor)-[:REQUIRES_TRAIT {
-  constraint: 'avoided', 
+  constraint: 'avoided',
   weight: 1.5
 }]->(t:Trait {name: 'CUSTOM_MAINTENANCE_WINDOW'})
 ```
@@ -105,7 +105,7 @@ WHERE NOT ()-[:PARENT_OF]->(rp)
 
 // Calculate preferred score
 WITH rp,
-     reduce(score = 0.0, p IN $preferred_traits | 
+     reduce(score = 0.0, p IN $preferred_traits |
        score + CASE WHEN (rp)-[:HAS_TRAIT]->(:Trait {name: p.name}) THEN p.weight ELSE 0.0 END
      ) AS preferred_score
 
@@ -116,7 +116,7 @@ WITH rp, preferred_score,
      ) AS avoided_penalty
 
 // Combined score: preferred bonus minus avoided penalty
-WITH rp, 
+WITH rp,
      preferred_score,
      avoided_penalty,
      (preferred_score - avoided_penalty) * $trait_weight_multiplier AS trait_affinity_score
@@ -135,9 +135,9 @@ OPTIONAL MATCH (flavor)-[req:REQUIRES_TRAIT]->(trait:Trait)
 WITH flavor,
      collect(CASE WHEN req.constraint = 'required' THEN trait.name END) AS required,
      collect(CASE WHEN req.constraint = 'forbidden' THEN trait.name END) AS forbidden,
-     collect(CASE WHEN req.constraint = 'preferred' 
+     collect(CASE WHEN req.constraint = 'preferred'
                   THEN {name: trait.name, weight: COALESCE(req.weight, 1.0)} END) AS preferred,
-     collect(CASE WHEN req.constraint = 'avoided' 
+     collect(CASE WHEN req.constraint = 'avoided'
                   THEN {name: trait.name, weight: COALESCE(req.weight, 1.0)} END) AS avoided
 
 // Filter out nulls
@@ -170,4 +170,3 @@ ORDER BY soft_trait_score DESC
 2. **Avoid maintenance hosts**: `trait:CUSTOM_MAINTENANCE=avoided:5.0`
 3. **Prefer newer hardware**: `trait:HW_CPU_X86_AVX512F=preferred:1.0`
 4. **Avoid overloaded hosts**: `trait:CUSTOM_HIGH_LOAD=avoided:3.0`
-

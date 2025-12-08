@@ -66,9 +66,9 @@ CREATE (storage)-[:HAS_TRAIT]->(sharing_trait)
 
 // Create aggregate and memberships
 CREATE (agg:Aggregate {
-  uuid: randomUUID(), 
-  name: 'shared-storage-agg', 
-  created_at: datetime(), 
+  uuid: randomUUID(),
+  name: 'shared-storage-agg',
+  created_at: datetime(),
   updated_at: datetime()
 })
 CREATE (storage)-[:MEMBER_OF]->(agg)
@@ -100,7 +100,7 @@ OPTIONAL MATCH (vcpu_inv)<-[vc:CONSUMES]-()
 OPTIONAL MATCH (mem_inv)<-[mc:CONSUMES]-()
 OPTIONAL MATCH (disk_inv)<-[dc:CONSUMES]-()
 
-WITH compute, storage, 
+WITH compute, storage,
      vcpu_inv, mem_inv, disk_inv,
      (vcpu_inv.total - vcpu_inv.reserved) - COALESCE(sum(vc.used), 0) AS vcpu_avail,
      (mem_inv.total - mem_inv.reserved) - COALESCE(sum(mc.used), 0) AS mem_avail,
@@ -160,4 +160,3 @@ OPTIONAL MATCH (ip_pool)-[:HAS_INVENTORY]->(ip_inv)-[:OF_CLASS]->(:ResourceClass
 
 RETURN compute, storage, disk_inv, ip_pool, ip_inv
 ```
-

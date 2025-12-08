@@ -55,9 +55,9 @@ CREATE (numa)-[:PARENT_OF]->(pgpu)
 
 // Add GPU trait
 MERGE (gpu_trait:Trait {
-  name: 'CUSTOM_NVIDIA_A100', 
-  standard: false, 
-  created_at: datetime(), 
+  name: 'CUSTOM_NVIDIA_A100',
+  standard: false,
+  created_at: datetime(),
   updated_at: datetime()
 })
 CREATE (pgpu)-[:HAS_TRAIT]->(gpu_trait)
@@ -88,9 +88,9 @@ CREATE (vgpu_type)-[:HAS_INVENTORY]->(inv:Inventory {
 
 // Add vGPU type trait
 MERGE (vgpu_trait:Trait {
-  name: 'CUSTOM_VGPU_NVIDIA_35', 
-  standard: false, 
-  created_at: datetime(), 
+  name: 'CUSTOM_VGPU_NVIDIA_35',
+  standard: false,
+  created_at: datetime(),
   updated_at: datetime()
 })
 CREATE (vgpu_type)-[:HAS_TRAIT]->(vgpu_trait)
@@ -186,4 +186,3 @@ WHERE vgpu_avail >= 1 AND vcpu_avail >= $vcpus AND mem_avail >= $memory_mb
 
 RETURN host, numa, vgpu_type
 ```
-

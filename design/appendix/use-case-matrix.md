@@ -166,4 +166,3 @@ Cross-reference between use cases and Tachyon implementation.
 | `IronicNode` | `:ResourceProvider` with baremetal trait | `:HAS_TRAIT` |
 | `migrate_instance()` | Speculative delta or commit | `MOVE` delta type |
 | `get_node_used_resources()` | Aggregation query | Virtual state overlay |
-

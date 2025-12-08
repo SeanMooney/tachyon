@@ -105,4 +105,3 @@ Traits can be used in four constraint modes:
 | `avoided` | Soft | Prefer providers WITHOUT trait (weigher, negative score) |
 
 See [03-constraints/trait-constraints.md](../../03-constraints/trait-constraints.md) for query patterns.
-

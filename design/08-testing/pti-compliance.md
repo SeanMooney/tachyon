@@ -398,4 +398,3 @@ tox -e pep8 && tox -e py312 && tox -e cover && tox -e docs
 - [OpenStack tox conventions](https://governance.openstack.org/tc/reference/pti/python.html)
 - [grian-ui tox.ini](../../ref/src/grian-ui/tox.ini) - Reference implementation
 - [Technology Stack](../00-overview/technology-stack.md) - pbr configuration and Flask API
-

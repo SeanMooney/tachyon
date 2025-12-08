@@ -177,4 +177,3 @@ WHERE vcpu_avail >= 4 AND mem_avail >= 8192
 
 RETURN host, sriov_provider, vgpu_provider
 ```
-

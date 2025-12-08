@@ -47,7 +47,7 @@ WITH host, collect({
 }) AS numa_nodes
 
 // Check if we have enough suitable NUMA nodes
-WHERE size([n IN numa_nodes WHERE n.avail_vcpus >= $min_vcpus_per_node 
+WHERE size([n IN numa_nodes WHERE n.avail_vcpus >= $min_vcpus_per_node
                                AND n.avail_mem >= $min_mem_per_node]) >= $numa_nodes
 
 RETURN host, numa_nodes
@@ -144,4 +144,3 @@ WHERE avail_pcpus >= $required_pcpus
 
 RETURN host, numa, avail_pcpus
 ```
-

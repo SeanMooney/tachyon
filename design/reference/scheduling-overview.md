@@ -145,7 +145,7 @@ The scheduler chooses a new host when an instance is:
 
 **Purpose**: Excludes compute nodes that don't support the `disk_format` of the boot image
 
-**Use Case**: 
+**Use Case**:
 - Libvirt driver with Ceph ephemeral backend doesn't support `qcow2` images (without expensive conversion)
 - Ensures scheduler doesn't send qcow2 boot requests to Ceph-backed computes
 
@@ -248,7 +248,7 @@ properties: os_distro='windows'
 ##### AggregateIoOpsFilter
 **Purpose**: Filters by disk I/O operations per host
 
-**Mechanism**: 
+**Mechanism**:
 - Per-aggregate `max_io_ops_per_host` metadata value
 - Falls back to `filter_scheduler.max_io_ops_per_host` config
 - Multiple aggregates → minimum value used
@@ -365,7 +365,7 @@ isolated_images = 342b492c-128f-4a42-8d3a-c5088cf27d13, ebd267a6-ca86-4d6c-9a0e-
 
 **Config**: `filter_scheduler.max_io_ops_per_host`
 
-**Mechanism**: 
+**Mechanism**:
 - Counts instances in specific task states: build, resize, snapshot, migrate, rescue, unshelve
 - Filters out hosts exceeding limit
 
@@ -754,7 +754,7 @@ This means:
 
 **Use Case**: Deployment-specific capabilities (e.g., baremetal setup, licensed software)
 
-**Discoverability**: 
+**Discoverability**:
 - Policy default: End users CAN list extra specs (`os_compute_api:os-flavor-extra-specs:index`)
 - But understanding requires documentation (just key/value pairs)
 - Some standard specs documented, but not exhaustive
@@ -1034,9 +1034,9 @@ class AcmeFilter(filters.BaseHostFilter):
     def host_passes(self, host_state, spec_obj):
         extra_spec = spec_obj.flavor.extra_specs.get('acme:foo')
         LOG.info("Extra spec value was '%s'", extra_spec)
-        
+
         # Add meaningful filtering logic here
-        
+
         return True
 ```
 
@@ -1174,7 +1174,7 @@ enabled_filters = ComputeFilter,AcmeFilter
 
 **Current Workaround**: Single scheduler process with small greenthread pool
 
-**Scale Challenge**: 
+**Scale Challenge**:
 - Current: Works <1k nodes
 - Future Need: 10k+ nodes (cells v2)
 
@@ -1217,7 +1217,7 @@ weight_setting = "metric1=ratio1, metric2=ratio2"
 
 **Feature**: Cells can be disabled for scheduling (maintenance, failures)
 
-**Management**: 
+**Management**:
 - `nova-manage cell_v2 update_cell`: Enable/disable existing cell
 - `nova-manage cell_v2 create_cell`: Create pre-disabled cell
 
@@ -1356,4 +1356,3 @@ weight_setting = "metric1=ratio1, metric2=ratio2"
 **Target Audience**: LLMs, developers, operators
 
 **Completeness**: Comprehensive coverage of Nova scheduling as of Epoxy (31.0.0) release
-

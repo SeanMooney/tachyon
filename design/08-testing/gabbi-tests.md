@@ -117,30 +117,30 @@ TESTS_DIR = 'gabbits'
 
 def load_tests(loader, tests, pattern):
     """Provide a TestSuite to the discovery process.
-    
+
     This is the standard Python unittest load_tests protocol.
     Called by test runners (stestr, unittest discover).
-    
+
     The key integration point is the `intercept` parameter, which
     receives a factory function that returns the Flask WSGI application.
     Gabbi uses wsgi-intercept to route HTTP requests to this app.
-    
+
     Args:
         loader: unittest.TestLoader instance
         tests: Existing TestSuite (ignored, Gabbi builds its own)
         pattern: Pattern for test discovery (ignored)
-    
+
     Returns:
         TestSuite containing Gabbi tests generated from YAML files
     """
     test_dir = os.path.join(os.path.dirname(__file__), TESTS_DIR)
-    
+
     # Per-test fixtures (applied to each individual test)
     inner_fixtures = [
         output.CaptureOutput,
         capture.Logging,
     ]
-    
+
     return driver.build_tests(
         test_dir,                          # Directory with YAML files
         loader,                            # unittest.TestLoader
@@ -160,21 +160,21 @@ The `intercept` parameter receives a factory function that returns the Flask WSG
 # In local_fixtures/gabbits.py
 def setup_app():
     """WSGI app factory for Gabbi.
-    
+
     Called by Gabbi when a test needs to make an HTTP request.
     wsgi-intercept routes the request to this Flask app.
-    
+
     Returns:
         Flask WSGI application callable
     """
     from tachyon.api import create_app
-    
+
     flask_config = {
         'TESTING': True,
         'AUTH_STRATEGY': 'noauth2',
         'NEO4J_URI': DB_FIXTURE.uri if DB_FIXTURE else None,
     }
-    
+
     return create_app(flask_config)
 ```
 ```
@@ -446,11 +446,11 @@ For tests requiring pre-populated data:
 ```python
 class MyFeatureFixture(APIFixture):
     """Fixture with pre-created data for my-feature tests."""
-    
+
     def start_fixture(self):
         super().start_fixture()
         self._create_my_data()
-    
+
     def _create_my_data(self):
         # Create data in Neo4j
         pass
@@ -495,4 +495,3 @@ tox -e functional -- test_api.ResourceProviderGabbits.test_010_create_resource_p
 - [Placement gabbits/](../../ref/src/placement/placement/tests/functional/gabbits/) - Original test files
 - [Flask Testing](../../ref/src/flask/docs/testing.rst) - Flask test client documentation
 - [Technology Stack](../00-overview/technology-stack.md) - Flask application factory pattern
-

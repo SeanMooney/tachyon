@@ -71,4 +71,3 @@ See [nodes/](nodes/) for detailed definitions.
 | `REQUIRES_TRAIT` | Flavor | Trait | constraint, weight |
 
 See [relationships/](relationships/) for detailed definitions.
-

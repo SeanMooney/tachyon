@@ -54,4 +54,3 @@ This section documents how scheduling constraints are modeled in the Tachyon gra
 - Influence host ranking
 - Applied after filtering
 - Never exclude hosts, only re-order
-

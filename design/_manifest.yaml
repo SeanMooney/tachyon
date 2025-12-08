@@ -6,39 +6,39 @@ sections:
   - id: overview
     path: 00-overview/
     description: Introduction, design principles, and terminology
-    
+
   - id: schema
     path: 01-schema/
     description: Neo4j node and relationship definitions
-    
+
   - id: patterns
     path: 02-patterns/
     description: Implementation patterns for complex structures
-    
+
   - id: constraints
     path: 03-constraints/
     description: Constraint modeling for scheduling decisions
-    
+
   - id: queries
     path: 04-queries/
     description: Cypher query implementations
-    
+
   - id: operations
     path: 05-operations/
     description: Runtime operations and infrastructure
-    
+
   - id: migration
     path: 06-migration/
     description: Placement API compatibility layer
-    
+
   - id: watcher-integration
     path: 07-watcher-integration/
     description: Watcher decision engine integration and simulation
-    
+
   - id: testing
     path: 08-testing/
     description: Testing architecture, fixtures, and PTI compliance
-    
+
   - id: reference
     path: reference/
     description: OpenStack Nova/Placement reference material
@@ -50,19 +50,19 @@ files:
     description: Purpose, why graph, goals, and scope of Tachyon
     keywords: [introduction, goals, graph-database, neo4j, placement, scheduler]
     dependencies: []
-    
+
   - path: 00-overview/design-principles.md
     title: Design Principles
     description: Core architectural decisions and patterns
     keywords: [design, principles, optimistic-concurrency, generation, relationships]
     dependencies: []
-    
+
   - path: 00-overview/glossary.md
     title: Glossary
     description: Term definitions and quick reference
     keywords: [glossary, terms, definitions, reference]
     dependencies: []
-    
+
   - path: 00-overview/technology-stack.md
     title: Technology Stack
     description: Core technology choices - Flask, pbr, Neo4j, oslo.* ecosystem, and future uv consideration
@@ -75,40 +75,40 @@ files:
     description: Core entity representing a source of resources, forms hierarchical trees
     keywords: [resource-provider, compute-node, hierarchy, tree, generation, uuid]
     dependencies: []
-    
+
   - path: 01-schema/nodes/inventory.md
     title: Inventory Node
     description: Quantitative resources available on a resource provider
     keywords: [inventory, total, reserved, allocation-ratio, capacity, min-unit, max-unit]
     dependencies:
       - 01-schema/nodes/resource-provider.md
-      
+
   - path: 01-schema/nodes/consumer.md
     title: Consumer, Project, User Nodes
     description: Entities that consume resources and their ownership
     keywords: [consumer, project, user, instance, allocation, ownership]
     dependencies:
       - 01-schema/nodes/inventory.md
-      
+
   - path: 01-schema/nodes/resource-class.md
     title: ResourceClass Node
     description: Type of quantitative resource (VCPU, MEMORY_MB, CUSTOM_*)
     keywords: [resource-class, vcpu, memory, disk, custom-resource]
     dependencies: []
-    
+
   - path: 01-schema/nodes/trait.md
     title: Trait Node
     description: Qualitative characteristic of a resource provider
     keywords: [trait, capability, hw-cpu, compute-status, custom-trait]
     dependencies: []
-    
+
   - path: 01-schema/nodes/aggregate.md
     title: Aggregate and AvailabilityZone Nodes
     description: Grouping mechanisms for resource providers
     keywords: [aggregate, availability-zone, host-aggregate, grouping]
     dependencies:
       - 01-schema/nodes/resource-provider.md
-      
+
   - path: 01-schema/nodes/nova-entities.md
     title: Nova-Specific Entities
     description: Flavor, Image, ServerGroup, and ExtraSpec nodes
@@ -116,7 +116,7 @@ files:
     dependencies:
       - 01-schema/nodes/trait.md
       - 01-schema/nodes/resource-class.md
-      
+
   - path: 01-schema/nodes/infrastructure.md
     title: Infrastructure Nodes
     description: Cell, NUMANode, PCIDevice, and vGPU nodes
@@ -132,7 +132,7 @@ files:
     dependencies:
       - 01-schema/nodes/resource-provider.md
       - 01-schema/nodes/inventory.md
-      
+
   - path: 01-schema/relationships/consumption.md
     title: Consumption Relationships
     description: CONSUMES, OWNED_BY, CREATED_BY, OF_TYPE relationships
@@ -140,7 +140,7 @@ files:
     dependencies:
       - 01-schema/nodes/consumer.md
       - 01-schema/nodes/inventory.md
-      
+
   - path: 01-schema/relationships/membership.md
     title: Membership Relationships
     description: HAS_TRAIT, MEMBER_OF, DEFINES_AZ, LOCATED_IN relationships
@@ -148,7 +148,7 @@ files:
     dependencies:
       - 01-schema/nodes/trait.md
       - 01-schema/nodes/aggregate.md
-      
+
   - path: 01-schema/relationships/scheduling.md
     title: Scheduling Relationships
     description: REQUIRES_TRAIT, SHARES_RESOURCES, TENANT_ALLOWED, and more
@@ -164,7 +164,7 @@ files:
     dependencies:
       - 01-schema/nodes/resource-provider.md
       - 01-schema/relationships/hierarchy.md
-      
+
   - path: 02-patterns/numa-topology.md
     title: NUMA Topology
     description: Modeling NUMA nodes as nested resource providers
@@ -172,21 +172,21 @@ files:
     dependencies:
       - 02-patterns/provider-trees.md
       - 01-schema/nodes/infrastructure.md
-      
+
   - path: 02-patterns/pci-hierarchy.md
     title: PCI Device Hierarchy
     description: Modeling PCI devices, SR-IOV PF/VF relationships
     keywords: [pci, sriov, physical-function, virtual-function, passthrough, physnet]
     dependencies:
       - 02-patterns/numa-topology.md
-      
+
   - path: 02-patterns/vgpu.md
     title: vGPU Modeling
     description: Virtual GPU as child resource providers of physical GPUs
     keywords: [vgpu, gpu, nvidia, physical-gpu, vgpu-type]
     dependencies:
       - 02-patterns/pci-hierarchy.md
-      
+
   - path: 02-patterns/sharing-providers.md
     title: Sharing Providers
     description: Shared storage and cross-tree resource sharing
@@ -194,7 +194,7 @@ files:
     dependencies:
       - 02-patterns/provider-trees.md
       - 01-schema/relationships/scheduling.md
-      
+
   - path: 02-patterns/soft-constraints.md
     title: Soft Constraints
     description: Preferred and avoided traits for weighing decisions
@@ -211,7 +211,7 @@ files:
     dependencies:
       - 01-schema/nodes/trait.md
       - 01-schema/relationships/membership.md
-      
+
   - path: 03-constraints/aggregate-constraints.md
     title: Aggregate-Based Constraints
     description: member_of filtering, tenant isolation, image isolation
@@ -219,14 +219,14 @@ files:
     dependencies:
       - 01-schema/nodes/aggregate.md
       - 01-schema/relationships/scheduling.md
-      
+
   - path: 03-constraints/server-group-constraints.md
     title: Server Group Constraints
     description: Affinity, anti-affinity, soft variants, max_server_per_host
     keywords: [affinity, anti-affinity, soft-affinity, server-group, max-server-per-host]
     dependencies:
       - 01-schema/nodes/nova-entities.md
-      
+
   - path: 03-constraints/topology-constraints.md
     title: Topology Constraints
     description: NUMA affinity, PCI-NUMA affinity, same-subtree constraints
@@ -234,7 +234,7 @@ files:
     dependencies:
       - 02-patterns/numa-topology.md
       - 02-patterns/pci-hierarchy.md
-      
+
   - path: 03-constraints/resource-group-constraints.md
     title: Resource Group Constraints
     description: group_policy (isolate/none), in_tree, same_subtree
@@ -250,49 +250,49 @@ files:
     dependencies:
       - 03-constraints/trait-constraints.md
       - 03-constraints/aggregate-constraints.md
-      
+
   - path: 04-queries/filters/compute-filters.md
     title: Compute and Image Filters
     description: ComputeFilter, ImagePropertiesFilter implementations
     keywords: [compute-filter, image-properties, disabled, hypervisor-type]
     dependencies:
       - 04-queries/allocation-candidates.md
-      
+
   - path: 04-queries/filters/topology-filters.md
     title: Topology Filters
     description: NUMATopologyFilter, PciPassthroughFilter implementations
     keywords: [numa-filter, pci-filter, topology-filter, passthrough]
     dependencies:
       - 03-constraints/topology-constraints.md
-      
+
   - path: 04-queries/filters/server-group-filters.md
     title: Server Group Filters
     description: Affinity and anti-affinity filter implementations
     keywords: [affinity-filter, anti-affinity-filter, server-group-filter]
     dependencies:
       - 03-constraints/server-group-constraints.md
-      
+
   - path: 04-queries/filters/aggregate-filters.md
     title: Aggregate Filters
     description: Tenant isolation, image isolation, extra specs filters
     keywords: [tenant-filter, image-filter, aggregate-filter, isolation]
     dependencies:
       - 03-constraints/aggregate-constraints.md
-      
+
   - path: 04-queries/weighers/resource-weighers.md
     title: Resource Weighers
     description: RAM, CPU, Disk, IO, PCI weigher implementations
     keywords: [ram-weigher, cpu-weigher, disk-weigher, io-weigher, pci-weigher]
     dependencies:
       - 04-queries/allocation-candidates.md
-      
+
   - path: 04-queries/weighers/trait-affinity-weigher.md
     title: Trait Affinity Weigher
     description: Preferred/avoided trait scoring for soft constraints
     keywords: [trait-weigher, soft-affinity, preferred-score, avoided-penalty]
     dependencies:
       - 02-patterns/soft-constraints.md
-      
+
   - path: 04-queries/weighers/group-weighers.md
     title: Group and Cell Weighers
     description: ServerGroup soft weighers, CrossCellWeigher, BuildFailureWeigher
@@ -307,21 +307,21 @@ files:
     keywords: [claiming, allocation, generation, concurrency, transaction]
     dependencies:
       - 01-schema/relationships/consumption.md
-      
+
   - path: 05-operations/indexes-constraints.md
     title: Indexes and Constraints
     description: Neo4j schema setup for performance and integrity
     keywords: [index, constraint, uniqueness, performance, schema]
     dependencies:
       - 01-schema/nodes/resource-provider.md
-      
+
   - path: 05-operations/telemetry.md
     title: Telemetry Integration
     description: Prometheus/Aetos hooks for real-time metrics
     keywords: [telemetry, prometheus, metrics, utilization, power-aware]
     dependencies:
       - 01-schema/nodes/resource-provider.md
-      
+
   - path: 05-operations/simulation.md
     title: Simulation Operations
     description: API operations for speculative what-if analysis
@@ -338,7 +338,7 @@ files:
     dependencies:
       - 01-schema/nodes/resource-provider.md
       - 01-schema/nodes/inventory.md
-      
+
   - path: 06-migration/data-migration.md
     title: Data Migration
     description: Scripts and procedures for migrating from Placement
@@ -352,25 +352,25 @@ files:
     description: Complete Placement API data model reference
     keywords: [placement, openstack, api, reference]
     dependencies: []
-    
+
   - path: reference/nova-model.md
     title: Nova Data Model Reference
     description: Nova scheduling entities, flavor extra specs, image properties
     keywords: [nova, flavor, extra-specs, image-properties, instance]
     dependencies: []
-    
+
   - path: reference/scheduling-overview.md
     title: Nova Scheduling Overview
     description: Nova filters, weighers, and scheduling workflow
     keywords: [nova-scheduler, filters, weighers, workflow]
     dependencies: []
-    
+
   - path: reference/use-cases.md
     title: Use Cases
     description: Requirements that Tachyon must support
     keywords: [use-cases, requirements, capabilities]
     dependencies: []
-    
+
   - path: reference/quick-reference.md
     title: Quick Reference
     description: Cheat sheet for node labels, relationships, and patterns
@@ -383,7 +383,7 @@ files:
     description: Integration with OpenStack Watcher for stateless optimization
     keywords: [watcher, decision-engine, optimization, simulation, stateless, horizontal-scaling]
     dependencies: []
-    
+
   - path: 07-watcher-integration/simulation-sessions.md
     title: Simulation Sessions
     description: Server-side sandbox for speculative what-if analysis
@@ -391,7 +391,7 @@ files:
     dependencies:
       - 07-watcher-integration/README.md
       - 01-schema/nodes/consumer.md
-      
+
   - path: 07-watcher-integration/watcher-model-mapping.md
     title: Watcher Model Mapping
     description: Mapping Watcher entities to Tachyon graph nodes and relationships
@@ -415,21 +415,21 @@ files:
     description: Testing philosophy, architecture, and infrastructure for Tachyon
     keywords: [testing, unit-tests, functional-tests, gabbi, stestr, pti, fixtures]
     dependencies: []
-    
+
   - path: 08-testing/project-structure.md
     title: Project Structure
     description: src layout and directory organization for Tachyon
     keywords: [src-layout, project-structure, directory, pyproject, tox, pbr]
     dependencies:
       - 08-testing/README.md
-      
+
   - path: 08-testing/fixtures.md
     title: Fixture Architecture
     description: Test fixture design patterns using the fixtures library
     keywords: [fixtures, local_fixtures, testtools, useFixture, addCleanup, composition]
     dependencies:
       - 08-testing/README.md
-      
+
   - path: 08-testing/gabbi-tests.md
     title: Gabbi Tests
     description: Placement API compatibility testing using Gabbi YAML tests
@@ -437,18 +437,17 @@ files:
     dependencies:
       - 08-testing/fixtures.md
       - 06-migration/api-mapping.md
-      
+
   - path: 08-testing/neo4j-testing.md
     title: Neo4j Testing
     description: Database testing patterns using testcontainers
     keywords: [neo4j, testcontainers, database, isolation, container, cypher]
     dependencies:
       - 08-testing/fixtures.md
-      
+
   - path: 08-testing/pti-compliance.md
     title: PTI Compliance
     description: OpenStack Project Testing Interface requirements and implementation
     keywords: [pti, openstack, tox, stestr, coverage, pep8, sphinx]
     dependencies:
       - 08-testing/README.md
-

@@ -130,4 +130,3 @@ Queries that compute the effective state by layering session deltas over the glo
 | Simulation | Local mutations | Server-side sandboxes |
 | Multi-strategy | Sequential | Parallel sessions |
 | Persistence | None (rebuild on restart) | Durable graph storage |
-

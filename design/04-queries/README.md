@@ -77,4 +77,3 @@ Common parameters used across queries:
 | `$avoided_traits` | List | `[{name, weight}]` for weighing |
 | `$member_of` | List | Aggregate UUIDs (any match) |
 | `$limit` | Integer | Max results to return |
-

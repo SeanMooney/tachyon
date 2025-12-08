@@ -861,4 +861,3 @@ resource providers, not specific resources.
 
 ### Custom Traits
 - `CUSTOM_*` - User-defined traits (must start with "CUSTOM_" prefix)
-

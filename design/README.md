@@ -55,4 +55,3 @@ See [00-overview/technology-stack.md](00-overview/technology-stack.md) for detai
 - **Version**: 1.0
 - **Last Updated**: 2025-12-06
 - **Target Audience**: Developers, operators, LLMs implementing Tachyon
-

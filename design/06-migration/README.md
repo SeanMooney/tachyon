@@ -32,4 +32,3 @@ This section documents the bidirectional mapping between OpenStack Placement API
 - Generation-based concurrency must be preserved
 - Trait and aggregate semantics must match exactly
 - Custom resource classes must be migrated
-

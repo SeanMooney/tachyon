@@ -117,4 +117,3 @@ MERGE (user:User {external_id: $user_id})
 MERGE (consumer)-[:OWNED_BY]->(project)
 MERGE (consumer)-[:CREATED_BY]->(user)
 ```
-

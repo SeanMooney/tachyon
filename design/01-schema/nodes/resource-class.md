@@ -99,4 +99,3 @@ CREATE (rc:ResourceClass {
 |--------------|-----------|--------|-------------|
 | `OF_CLASS` | incoming | Inventory | Inventories of this class |
 | `REQUIRES_RESOURCE` | incoming | Flavor | Flavors requiring this class |
-

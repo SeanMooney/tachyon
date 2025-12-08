@@ -85,4 +85,3 @@ ResourceProvider nodes may have additional labels for specialization:
 | `:PCIVF` | PCI Virtual Function |
 | `:PhysicalGPU` | Physical GPU device |
 | `:vGPUType` | Virtual GPU type provider |
-

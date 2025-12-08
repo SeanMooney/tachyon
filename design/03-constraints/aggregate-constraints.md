@@ -29,7 +29,7 @@ WHERE agg.uuid IN $aggregate_uuids
 
 // All of multiple aggregates (AND)
 MATCH (rp:ResourceProvider)
-WHERE ALL(agg_uuid IN $aggregate_uuids 
+WHERE ALL(agg_uuid IN $aggregate_uuids
       WHERE (rp)-[:MEMBER_OF]->(:Aggregate {uuid: agg_uuid}))
 ```
 
@@ -40,7 +40,7 @@ Provider must NOT be in specific aggregate(s).
 ```cypher
 // Not in any of these aggregates
 MATCH (rp:ResourceProvider)
-WHERE NONE(agg_uuid IN $forbidden_aggregates 
+WHERE NONE(agg_uuid IN $forbidden_aggregates
       WHERE (rp)-[:MEMBER_OF]->(:Aggregate {uuid: agg_uuid}))
 ```
 
@@ -74,7 +74,7 @@ OPTIONAL MATCH (rp)-[:MEMBER_OF]->(agg:Aggregate)-[:TENANT_ALLOWED]->(allowed:Pr
 // 1. Not in any aggregate with tenant restrictions, OR
 // 2. In aggregate that allows this project
 WITH rp, collect(DISTINCT agg) AS isolated_aggs, collect(DISTINCT allowed) AS allowed_projects
-WHERE size(isolated_aggs) = 0 
+WHERE size(isolated_aggs) = 0
    OR ANY(p IN allowed_projects WHERE p.external_id = $project_id)
 RETURN rp
 ```
@@ -100,7 +100,7 @@ MATCH (rp:ResourceProvider)
 OPTIONAL MATCH (rp)-[:MEMBER_OF]->(agg:Aggregate)-[:IMAGE_ALLOWED]->(img:Image)
 
 WITH rp, collect(DISTINCT agg) AS isolated_aggs, collect(DISTINCT img) AS allowed_images
-WHERE size(isolated_aggs) = 0 
+WHERE size(isolated_aggs) = 0
    OR ANY(i IN allowed_images WHERE i.uuid = $image_uuid)
 RETURN rp
 ```
@@ -145,7 +145,7 @@ AND (
 
 // member_of filter (any of)
 AND (
-  size($member_of) = 0 OR 
+  size($member_of) = 0 OR
   EXISTS {
     MATCH (rp)-[:MEMBER_OF]->(agg:Aggregate)
     WHERE agg.uuid IN $member_of
@@ -160,4 +160,3 @@ AND NOT EXISTS {
 
 RETURN rp
 ```
-

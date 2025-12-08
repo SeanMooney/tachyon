@@ -240,4 +240,3 @@ None.
 | IMAGE_ALLOWED | Aggregate | Image | 0..N : 0..N |
 | NUMA_AFFINITY | PCIDevice | NUMANode | N : 1 |
 | PCI_PARENT_OF | PCIDevice | PCIDevice | 1 : 0..N |
-

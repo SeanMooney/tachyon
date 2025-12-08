@@ -148,4 +148,3 @@ For complex extra specs, model as separate nodes:
   value: 'dedicated'
 })
 ```
-

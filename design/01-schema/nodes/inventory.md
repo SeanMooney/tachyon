@@ -89,4 +89,3 @@ OPTIONAL MATCH (inv)<-[c:CONSUMES]-()
 WITH inv, capacity, COALESCE(sum(c.used), 0) AS usage
 WHERE capacity - usage >= $requested_amount
 ```
-

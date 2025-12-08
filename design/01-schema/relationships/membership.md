@@ -104,7 +104,7 @@ RETURN DISTINCT rp
 
 // Providers in all of multiple aggregates (AND)
 MATCH (rp:ResourceProvider)
-WHERE ALL(agg_uuid IN $aggregate_uuids 
+WHERE ALL(agg_uuid IN $aggregate_uuids
       WHERE (rp)-[:MEMBER_OF]->(:Aggregate {uuid: agg_uuid}))
 RETURN rp
 ```
@@ -196,4 +196,3 @@ ORDER BY cross_cell_penalty
 | MEMBER_OF | ResourceProvider | Aggregate | 0..N : 0..N |
 | DEFINES_AZ | Aggregate | AvailabilityZone | N : 0..1 |
 | LOCATED_IN | ResourceProvider | Cell | N : 1 |
-
