@@ -1,7 +1,7 @@
 ---
 title: Technology Stack
-description: Core technology choices - Flask, pbr, Neo4j, and future uv consideration
-keywords: [flask, pbr, uv, packaging, api, wsgi, build-system, pyproject, neo4j]
+description: Core technology choices - Flask, pbr, Neo4j, oslo.* ecosystem, and future uv consideration
+keywords: [flask, pbr, uv, packaging, api, wsgi, build-system, pyproject, neo4j, oslo, middleware, keystone, authentication, policy, rbac, logging, context, concurrency, stevedore, plugins]
 related:
   - 00-overview/design-principles.md
   - 08-testing/README.md
@@ -21,6 +21,7 @@ This document describes Tachyon's core technology choices and their rationale. T
 | REST API Framework | Flask | HTTP API endpoints, Placement API compatibility |
 | Build/Packaging | pbr | OpenStack-standard packaging, version management |
 | Database | Neo4j | Graph-based resource modeling |
+| OpenStack Libraries | oslo.* ecosystem | Cross-cutting concerns (config, logging, auth, policy) |
 | Future Tooling | uv | Faster dependency resolution (planned) |
 
 ## REST API Framework: Flask
@@ -466,6 +467,209 @@ max_connection_pool_size = 50
 connection_timeout = 30
 ```
 
+## OpenStack Common Libraries
+
+Tachyon leverages the OpenStack oslo.* library ecosystem for cross-cutting concerns. These battle-tested libraries provide standardized implementations for configuration, logging, authentication, policy enforcement, and more. Not all libraries are required, but they will be used as appropriate.
+
+### Core Infrastructure
+
+| Library | Purpose |
+|---------|---------|
+| [oslo.config](https://opendev.org/openstack/oslo.config) | Configuration management (CLI args, .ini files) |
+| [oslo.log](https://opendev.org/openstack/oslo.log) | Structured logging with context |
+| [oslo.context](https://opendev.org/openstack/oslo.context) | Request context object passed through call stack |
+| [oslo.utils](https://opendev.org/openstack/oslo.utils) | Common utility functions (time, import, etc.) |
+| [oslo.serialization](https://opendev.org/openstack/oslo.serialization) | JSON/msgpack serialization |
+| [stevedore](https://opendev.org/openstack/stevedore) | Plugin loading via entry points |
+
+### API and Authentication
+
+| Library | Purpose |
+|---------|---------|
+| [oslo.middleware](https://opendev.org/openstack/oslo.middleware) | WSGI middleware (request ID, CORS, healthcheck) |
+| [keystonemiddleware](https://opendev.org/openstack/keystonemiddleware) | Keystone token validation middleware |
+| [keystoneauth](https://opendev.org/openstack/keystoneauth) | Authentication session/plugin handling |
+| [oslo.policy](https://opendev.org/openstack/oslo.policy) | RBAC policy enforcement |
+| [openstacksdk](https://opendev.org/openstack/openstacksdk) | Client SDK for OpenStack service interactions |
+
+### Concurrency and Service Runtime
+
+| Library | Purpose |
+|---------|---------|
+| [oslo.service](https://opendev.org/openstack/oslo.service) | Service launcher, periodic tasks |
+| [cotyledon](https://github.com/sileht/cotyledon) | Threaded/forked service backend |
+| [oslo.concurrency](https://opendev.org/openstack/oslo.concurrency) | Locking, process utilities |
+| [futurist](https://opendev.org/openstack/futurist) | Executors, futures, periodic workers |
+
+### Testing
+
+| Library | Purpose |
+|---------|---------|
+| [oslotest](https://opendev.org/openstack/oslotest) | Base test classes, testtools integration |
+
+### Optional (As Needed)
+
+| Library | Purpose |
+|---------|---------|
+| [oslo.versionedobjects](https://opendev.org/openstack/oslo.versionedobjects) | Versioned object serialization for RPC |
+
+### Plugin Architecture with stevedore
+
+All scheduler filters and weighers are defined as plugins using stevedore's entry point mechanism, even though implementations are defined in-tree. This follows OpenStack conventions and enables future extensibility.
+
+```toml
+# pyproject.toml entry points for filters and weighers
+[project.entry-points."tachyon.scheduler.filters"]
+ComputeFilter = "tachyon.scheduler.filters.compute:ComputeFilter"
+ImagePropertiesFilter = "tachyon.scheduler.filters.image:ImagePropertiesFilter"
+NUMATopologyFilter = "tachyon.scheduler.filters.numa:NUMATopologyFilter"
+PciPassthroughFilter = "tachyon.scheduler.filters.pci:PciPassthroughFilter"
+
+[project.entry-points."tachyon.scheduler.weighers"]
+RAMWeigher = "tachyon.scheduler.weighers.ram:RAMWeigher"
+CPUWeigher = "tachyon.scheduler.weighers.cpu:CPUWeigher"
+DiskWeigher = "tachyon.scheduler.weighers.disk:DiskWeigher"
+```
+
+Loading plugins at runtime:
+
+```python
+from stevedore import driver
+from stevedore import ExtensionManager
+
+# Load all enabled filters
+filter_manager = ExtensionManager(
+    namespace='tachyon.scheduler.filters',
+    invoke_on_load=True,
+    on_load_failure_callback=log_load_failure,
+)
+
+# Load a specific weigher by name
+weigher = driver.DriverManager(
+    namespace='tachyon.scheduler.weighers',
+    name='RAMWeigher',
+    invoke_on_load=True,
+).driver
+```
+
+### oslo.config Integration with Flask
+
+oslo.config serves as the single source of truth for configuration, with Flask receiving a subset of values:
+
+```python
+# src/tachyon/conf/__init__.py
+from oslo_config import cfg
+
+CONF = cfg.CONF
+
+api_opts = [
+    cfg.StrOpt('auth_strategy',
+               default='keystone',
+               choices=['keystone', 'noauth2'],
+               help='Authentication strategy'),
+    cfg.IntOpt('max_limit',
+               default=1000,
+               help='Maximum number of items in a single response'),
+]
+
+CONF.register_opts(api_opts, group='api')
+
+def list_opts():
+    """Return oslo.config option definitions for sample config generation."""
+    return [('api', api_opts)]
+```
+
+```python
+# src/tachyon/api/app.py
+from oslo_config import cfg
+from tachyon.conf import CONF
+
+def create_app(config=None):
+    """Create Flask application with oslo.config integration."""
+    app = Flask(__name__)
+    
+    # Map oslo.config values to Flask config
+    app.config['AUTH_STRATEGY'] = CONF.api.auth_strategy
+    app.config['MAX_LIMIT'] = CONF.api.max_limit
+    
+    # Allow test overrides
+    if config:
+        app.config.update(config)
+    
+    return app
+```
+
+### oslo.middleware Integration with Flask
+
+oslo.middleware components wrap the Flask WSGI application:
+
+```python
+# src/tachyon/api/app.py
+from oslo_middleware import cors
+from oslo_middleware import healthcheck
+from oslo_middleware import request_id
+
+def create_app(config=None):
+    app = Flask(__name__)
+    # ... blueprint registration ...
+    
+    # Wrap with oslo middleware (applied in reverse order)
+    app.wsgi_app = request_id.RequestId(app.wsgi_app)
+    app.wsgi_app = cors.CORS(app.wsgi_app, CONF)
+    app.wsgi_app = healthcheck.Healthcheck(app.wsgi_app, CONF)
+    
+    return app
+```
+
+For Keystone authentication:
+
+```python
+# src/tachyon/api/app.py
+from keystonemiddleware import auth_token
+
+def create_app(config=None):
+    app = Flask(__name__)
+    # ... setup ...
+    
+    if CONF.api.auth_strategy == 'keystone':
+        app.wsgi_app = auth_token.AuthProtocol(app.wsgi_app, {})
+    
+    return app
+```
+
+### oslo.context Request Flow
+
+oslo.context provides the request context that flows through all function calls:
+
+```python
+# src/tachyon/api/middleware.py
+from oslo_context import context as oslo_context
+from flask import g, request
+
+class TachyonContext(oslo_context.RequestContext):
+    """Tachyon-specific request context."""
+    
+    def __init__(self, user_id=None, project_id=None, roles=None, **kwargs):
+        super().__init__(user_id=user_id, project_id=project_id, 
+                         roles=roles or [], **kwargs)
+
+def before_request():
+    """Create context from request headers (set by keystonemiddleware)."""
+    g.context = TachyonContext(
+        user_id=request.headers.get('X-User-Id'),
+        project_id=request.headers.get('X-Project-Id'),
+        roles=request.headers.get('X-Roles', '').split(','),
+        request_id=request.headers.get('X-Request-Id'),
+    )
+
+# In blueprints, access via flask.g
+@bp.route('/<uuid:uuid>', methods=['GET'])
+def get_resource_provider(uuid):
+    context = g.context  # oslo.context instance
+    # Pass context to all downstream calls
+    return get_provider(context, uuid)
+```
+
 ## Test Framework
 
 Testing infrastructure is detailed in [08-testing/](../08-testing/). Key technologies:
@@ -485,4 +689,12 @@ Testing infrastructure is detailed in [08-testing/](../08-testing/). Key technol
 - [pbr Documentation](https://docs.openstack.org/pbr/latest/)
 - [uv Documentation](https://github.com/astral-sh/uv)
 - [Neo4j Python Driver](https://neo4j.com/docs/python-manual/current/)
+- [oslo.config Documentation](https://docs.openstack.org/oslo.config/latest/)
+- [oslo.middleware Documentation](https://docs.openstack.org/oslo.middleware/latest/)
+- [oslo.context Documentation](https://docs.openstack.org/oslo.context/latest/)
+- [oslo.policy Documentation](https://docs.openstack.org/oslo.policy/latest/)
+- [oslo.log Documentation](https://docs.openstack.org/oslo.log/latest/)
+- [keystonemiddleware Documentation](https://docs.openstack.org/keystonemiddleware/latest/)
+- [stevedore Documentation](https://docs.openstack.org/stevedore/latest/)
+- [oslotest Documentation](https://docs.openstack.org/oslotest/latest/)
 

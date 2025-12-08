@@ -65,8 +65,8 @@ files:
     
   - path: 00-overview/technology-stack.md
     title: Technology Stack
-    description: Core technology choices - Flask, pbr, Neo4j, and future uv consideration
-    keywords: [flask, pbr, uv, packaging, api, wsgi, build-system, pyproject, neo4j]
+    description: Core technology choices - Flask, pbr, Neo4j, oslo.* ecosystem, and future uv consideration
+    keywords: [flask, pbr, uv, packaging, api, wsgi, build-system, pyproject, neo4j, oslo, middleware, keystone, authentication, policy, rbac, logging, context, concurrency, stevedore, plugins]
     dependencies: []
 
   # 01-schema/nodes
