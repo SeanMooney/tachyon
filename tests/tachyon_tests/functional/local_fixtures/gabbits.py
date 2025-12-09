@@ -3,6 +3,9 @@
 This module provides fixtures for running Gabbi YAML tests against
 the Tachyon Flask application with a real Neo4j database (via testcontainers
 or an external instance).
+
+Pattern follows placement's test harness - a global CONF/APP that the fixture
+controls, and setup_app() returns the cached application.
 """
 
 import os
@@ -15,8 +18,10 @@ from testcontainers.neo4j import Neo4jContainer
 
 from tachyon.api import create_app
 
-# Global reference to database fixture for setup_app() access
-DB_FIXTURE = None
+# Global app for the current test file.
+# Set by APIFixture.start_fixture(), cleared by stop_fixture().
+# We cache the APP because wsgi-intercept expects a consistent WSGI app.
+APP = None
 
 
 class TachyonNeo4jContainer(Neo4jContainer):
@@ -71,11 +76,58 @@ class Neo4jFixture(fixtures.Fixture):
         self.container.with_env("NEO4J_dbms_memory_heap_initial__size", "256m")
         self.container.with_env("NEO4J_dbms_memory_heap_max__size", "512m")
         self.container.start()
-        self.addCleanup(self.container.stop)
+        self.addCleanup(self._stop_container)
 
         self.uri = self.container.get_connection_url()
         self.username = "neo4j"
         self.password = "password"
+
+    def _stop_container(self):
+        """Stop the Neo4j container if running."""
+        if self.container is not None:
+            try:
+                self.container.stop()
+            except Exception:
+                pass
+            self.container = None
+
+
+class LazyWSGIApp:
+    """A lazy WSGI wrapper that defers to the global APP.
+
+    This is needed because gabbi creates HTTP clients during test discovery
+    (before fixtures run), but we need requests to use the app created by
+    the fixture. This wrapper defers the actual app lookup to request time.
+    """
+
+    def __call__(self, environ, start_response):
+        """WSGI callable that delegates to the current global APP."""
+        if APP is None:
+            # This shouldn't happen during normal test execution
+            raise RuntimeError(
+                "LazyWSGIApp called but APP is None. "
+                "Fixture may not have run."
+            )
+        return APP(environ, start_response)
+
+
+# Single lazy app instance used by all tests
+_lazy_app = LazyWSGIApp()
+
+
+def setup_app():
+    """WSGI application factory for Gabbi.
+
+    Called by Gabbi via wsgi-intercept to get the Flask WSGI application.
+    Returns a lazy wrapper that defers to the global APP set by the fixture.
+
+    This allows tests to be discovered before fixtures run, while still
+    using the correct app configuration during execution.
+
+    Returns:
+        WSGI application callable.
+    """
+    return _lazy_app
 
 
 class APIFixture(gabbi_fixture.GabbiFixture):
@@ -83,10 +135,11 @@ class APIFixture(gabbi_fixture.GabbiFixture):
 
     Sets up:
     - Neo4j database (testcontainer or external)
+    - Flask app configuration
     - Environment variables for test data (UUIDs, names)
-    - Updates the cached Flask app's Neo4j configuration
 
-    The Neo4j driver is initialized lazily on first request via get_driver().
+    Each YAML file gets its own database container for complete isolation.
+    The fixture creates and caches the Flask app with proper Neo4j config.
 
     Used by declaring in YAML test files:
         fixtures:
@@ -95,94 +148,49 @@ class APIFixture(gabbi_fixture.GabbiFixture):
 
     def start_fixture(self):
         """Called once before any tests in a YAML file run."""
-        global DB_FIXTURE, _CACHED_APP
+        global APP
 
-        # Set up database
-        DB_FIXTURE = Neo4jFixture()
-        DB_FIXTURE.setUp()
+        # Set up database - each YAML file gets its own container
+        self.db_fixture = Neo4jFixture()
+        self.db_fixture.setUp()
 
         # Set up environment variables for test data
-        self._setup_environ()
+        os.environ['RP_UUID'] = str(uuid.uuid4())
+        os.environ['RP_NAME'] = f"rp-{uuid.uuid4().hex[:8]}"
+        os.environ['RP_UUID1'] = str(uuid.uuid4())
+        os.environ['RP_NAME1'] = f"rp1-{uuid.uuid4().hex[:8]}"
+        os.environ['RP_UUID2'] = str(uuid.uuid4())
+        os.environ['RP_NAME2'] = f"rp2-{uuid.uuid4().hex[:8]}"
+        os.environ['PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
+        os.environ['ALT_PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
+        os.environ['CONSUMER_UUID'] = str(uuid.uuid4())
+        os.environ['CONSUMER_UUID1'] = str(uuid.uuid4())
+        os.environ['PROJECT_ID'] = str(uuid.uuid4())
+        os.environ['USER_ID'] = str(uuid.uuid4())
+        os.environ['CUSTOM_RES_CLASS'] = 'CUSTOM_IRON_NFV'
 
-        # Update the cached app's config with the real database URI
-        # This must happen before any test makes a request
-        if _CACHED_APP is not None:
-            _CACHED_APP.config["NEO4J_URI"] = DB_FIXTURE.uri
-            _CACHED_APP.config["NEO4J_USERNAME"] = DB_FIXTURE.username
-            _CACHED_APP.config["NEO4J_PASSWORD"] = DB_FIXTURE.password
-
-    def stop_fixture(self):
-        """Called after all tests in a YAML file complete."""
-        global DB_FIXTURE, _CACHED_APP
-
-        # Close the Neo4j driver if it was initialized
-        if _CACHED_APP is not None and "neo4j_driver" in _CACHED_APP.extensions:
-            try:
-                _CACHED_APP.extensions["neo4j_driver"].close()
-            except Exception:
-                pass
-            del _CACHED_APP.extensions["neo4j_driver"]
-
-        if DB_FIXTURE:
-            DB_FIXTURE.cleanUp()
-            DB_FIXTURE = None
-
-    def _setup_environ(self):
-        """Set up environment variables for YAML test substitution."""
-        # Resource providers
-        os.environ["RP_UUID"] = str(uuid.uuid4())
-        os.environ["RP_NAME"] = f"rp-{uuid.uuid4().hex[:8]}"
-        os.environ["RP_UUID1"] = str(uuid.uuid4())
-        os.environ["RP_NAME1"] = f"rp1-{uuid.uuid4().hex[:8]}"
-        os.environ["RP_UUID2"] = str(uuid.uuid4())
-        os.environ["RP_NAME2"] = f"rp2-{uuid.uuid4().hex[:8]}"
-        os.environ["PARENT_PROVIDER_UUID"] = str(uuid.uuid4())
-
-        # Consumers and ownership
-        os.environ["CONSUMER_UUID"] = str(uuid.uuid4())
-        os.environ["CONSUMER_UUID1"] = str(uuid.uuid4())
-        os.environ["PROJECT_ID"] = str(uuid.uuid4())
-        os.environ["USER_ID"] = str(uuid.uuid4())
-
-        # Resource classes
-        os.environ["CUSTOM_RES_CLASS"] = "CUSTOM_IRON_NFV"
-
-
-# Module-level cached app instance for wsgi-intercept
-_CACHED_APP = None
-
-
-def setup_app():
-    """WSGI application factory for Gabbi.
-
-    Called by Gabbi via wsgi-intercept to get the Flask WSGI application.
-    Uses the global DB_FIXTURE for database configuration.
-
-    During test discovery (when DB_FIXTURE is None), we create the app
-    with routes registered but skip Neo4j initialization. The driver is
-    initialized lazily on first request via get_driver().
-
-    We cache the app instance so that when the fixture updates DB_FIXTURE,
-    subsequent calls can update the cached app's config.
-
-    Returns:
-        Flask WSGI application callable.
-    """
-    global _CACHED_APP
-
-    if _CACHED_APP is None:
-        # First call - create the app (during discovery, DB_FIXTURE is None)
+        # Create Flask app with proper Neo4j config and cache it
         flask_config = {
             "TESTING": True,
             "AUTH_STRATEGY": "noauth2",
-            "SKIP_DB_INIT": True,  # Skip DB init, driver init is lazy
+            "SKIP_DB_INIT": False,  # Initialize Neo4j driver during app creation
+            "NEO4J_URI": self.db_fixture.uri,
+            "NEO4J_USERNAME": self.db_fixture.username,
+            "NEO4J_PASSWORD": self.db_fixture.password,
         }
-        _CACHED_APP = create_app(flask_config)
+        APP = create_app(flask_config)
 
-    # Update config with current DB_FIXTURE settings if available
-    if DB_FIXTURE is not None:
-        _CACHED_APP.config["NEO4J_URI"] = DB_FIXTURE.uri
-        _CACHED_APP.config["NEO4J_USERNAME"] = DB_FIXTURE.username
-        _CACHED_APP.config["NEO4J_PASSWORD"] = DB_FIXTURE.password
+    def stop_fixture(self):
+        """Called after all tests in a YAML file complete."""
+        global APP
 
-    return _CACHED_APP
+        # Close Neo4j driver if initialized
+        if APP is not None and "neo4j_driver" in APP.extensions:
+            try:
+                APP.extensions["neo4j_driver"].close()
+            except Exception:
+                pass
+
+        # Clean up database fixture
+        self.db_fixture.cleanUp()
+        APP = None

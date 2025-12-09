@@ -8,3 +8,4 @@ keystonemiddleware>=10.6.0
 oslo.policy>=4.2.1
 stevedore>=5.2.0
 werkzeug>=3.0.1
+microversion-parse>=2.0.0

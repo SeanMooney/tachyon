@@ -24,22 +24,24 @@ class APIError(Exception):
 
     status_code: int = 500
     title: str = "Internal Server Error"
+    code: str | None = None
 
-    def __init__(self, detail: str | None = None):
+    def __init__(self, detail: str | None = None, code: str | None = None):
         super().__init__(detail)
         self.detail = detail or self.title
+        self.code = code or getattr(self, "code", None)
 
     def to_response(self) -> tuple[Response, int]:
         """Convert exception to a Placement-compatible JSON response."""
-        body = {
-            "errors": [
-                {
-                    "status": self.status_code,
-                    "title": self.title,
-                    "detail": self.detail,
-                }
-            ]
+        error = {
+            "status": self.status_code,
+            "title": self.title,
+            "detail": self.detail,
         }
+        if self.code:
+            error["code"] = self.code
+
+        body = {"errors": [error]}
         return jsonify(body), self.status_code
 
 
@@ -55,6 +57,13 @@ class Conflict(APIError):
 
     status_code = 409
     title = "Conflict"
+
+
+class Forbidden(APIError):
+    """Forbidden access (403)."""
+
+    status_code = 403
+    title = "Forbidden"
 
 
 class BadRequest(APIError):
@@ -91,7 +100,8 @@ class ConsumerGenerationConflict(Conflict):
 class ResourceProviderGenerationConflict(Conflict):
     """Resource provider generation mismatch."""
 
-    title = "Resource Provider Generation Conflict"
+    title = "Conflict"
+    code = "placement.concurrent_update"
 
 
 def error_response(status: int, title: str, detail: str) -> tuple[Response, int]:

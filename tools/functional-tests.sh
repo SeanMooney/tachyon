@@ -11,7 +11,6 @@ for arg in "${args[@]}"; do
   case "$arg" in
     --concurrency|--concurrency=*|-c|-c*)
       has_concurrency=1
-      break
       ;;
   esac
 done
@@ -26,6 +25,8 @@ if [[ $has_concurrency -eq 0 ]]; then
   args+=("--concurrency" "$conc")
 fi
 
+# Tests within a YAML file are sequential and depend on each other.
+# Each YAML file gets its own fresh app and database container.
 cmd=(stestr --test-path="${TEST_PATH}" run "${args[@]}")
 
 echo "Running: ${cmd[*]}"

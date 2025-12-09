@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from flask import g, request
 
+from tachyon.api import microversion
+
 
 def register(app) -> None:
     """Register placeholder middleware for auth and microversion."""
@@ -17,6 +19,6 @@ def register(app) -> None:
 
     @app.before_request
     def _set_microversion():
-        g.microversion = request.headers.get(
-            "OpenStack-API-Version", "placement latest"
-        )
+        header = request.headers.get("OpenStack-API-Version")
+        g.microversion = microversion.parse(header)
+        g.microversion_header = header or "placement 1.0"
