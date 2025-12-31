@@ -6,7 +6,6 @@ oslotest>=4.5.0
 
 # Gabbi API testing
 gabbi>=3.3.0
-wsgi-intercept>=1.13.0
 
 # Neo4j testing
 testcontainers[neo4j]>=4.6.0
