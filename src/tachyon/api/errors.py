@@ -104,6 +104,20 @@ class ResourceProviderGenerationConflict(Conflict):
     code = "placement.concurrent_update"
 
 
+class NotAcceptable(APIError):
+    """Not acceptable content type (406)."""
+
+    status_code = 406
+    title = "Not Acceptable"
+
+
+class UnsupportedMediaType(APIError):
+    """Unsupported media type (415)."""
+
+    status_code = 415
+    title = "Unsupported Media Type"
+
+
 def error_response(status: int, title: str, detail: str) -> tuple[Response, int]:
     """Create a Placement-compatible error response.
 
@@ -151,8 +165,31 @@ def register_handlers(app: Flask) -> None:
 
     @app.errorhandler(405)
     def method_not_allowed(error: Any) -> tuple[Response, int]:
+        # Get the method that was attempted
+        from flask import request
+        method = request.method
+        resp, status = error_response(
+            405, "Method Not Allowed",
+            f"The method {method} is not allowed for this resource."
+        )
+        # Add Allow header with valid methods
+        if hasattr(error, "valid_methods") and error.valid_methods:
+            resp.headers["Allow"] = ", ".join(sorted(error.valid_methods))
+        return resp, status
+
+    @app.errorhandler(406)
+    def not_acceptable(error: Any) -> tuple[Response, int]:
         return error_response(
-            405, "Method Not Allowed", "The method is not allowed for this resource."
+            406, "Not Acceptable", "Only application/json is provided"
+        )
+
+    @app.errorhandler(415)
+    def unsupported_media_type(error: Any) -> tuple[Response, int]:
+        from flask import request
+        content_type = request.content_type
+        return error_response(
+            415, "Unsupported Media Type",
+            f"The media type {content_type} is not supported, use application/json"
         )
 
     @app.errorhandler(500)

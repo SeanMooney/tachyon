@@ -9,8 +9,10 @@ from dataclasses import dataclass
 
 import microversion_parse
 
-# Placement currently tops out at 1.45+; we allow "latest" as a very high minor
-# so callers can gate features explicitly.
+# The maximum supported microversion - this maps to Placement's latest
+MAX_SUPPORTED_MINOR = 39
+
+# Internal value for "latest" - higher than any actual version for comparisons
 LATEST_MINOR = 999
 
 
