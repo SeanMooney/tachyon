@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Inventories API blueprint.
 
 Implements Placement-compatible inventory management for ResourceProviders.

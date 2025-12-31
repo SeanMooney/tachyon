@@ -39,6 +39,10 @@ sections:
     path: 08-testing/
     description: Testing architecture, fixtures, and PTI compliance
 
+  - id: development
+    path: 09-development/
+    description: Development guidelines and coding conventions
+
   - id: reference
     path: reference/
     description: OpenStack Nova/Placement reference material
@@ -450,4 +454,19 @@ files:
     description: OpenStack Project Testing Interface requirements and implementation
     keywords: [pti, openstack, tox, stestr, coverage, pep8, sphinx]
     dependencies:
+      - 08-testing/README.md
+
+  # 09-development
+  - path: 09-development/README.md
+    title: Development Guidelines Overview
+    description: Development practices and contribution guidelines for Tachyon
+    keywords: [development, guidelines, contributing, conventions]
+    dependencies: []
+
+  - path: 09-development/coding-conventions.md
+    title: Coding Conventions
+    description: OpenStack-compliant Python style guide for Tachyon
+    keywords: [style-guide, pep8, hacking, imports, oslo, docstrings, testing, conventions]
+    dependencies:
+      - 09-development/README.md
       - 08-testing/README.md

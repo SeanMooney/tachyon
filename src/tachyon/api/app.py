@@ -1,26 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+
+"""Flask application factory for Tachyon API."""
+
 from __future__ import annotations
 
-from flask import Flask, current_app
+import flask
 
-from tachyon.api import errors, middleware
-from tachyon.api.blueprints import (
-    aggregates,
-    allocation_candidates,
-    allocations,
-    inventories,
-    resource_classes,
-    resource_providers,
-    root,
-    traits,
-    usages,
-)
-from tachyon.db.neo4j_api import init_driver
-from tachyon.db.schema import apply_schema
+from tachyon.api import errors
+from tachyon.api import middleware
+from tachyon.api.blueprints import aggregates
+from tachyon.api.blueprints import allocation_candidates
+from tachyon.api.blueprints import allocations
+from tachyon.api.blueprints import inventories
+from tachyon.api.blueprints import resource_classes
+from tachyon.api.blueprints import resource_providers
+from tachyon.api.blueprints import root
+from tachyon.api.blueprints import traits
+from tachyon.api.blueprints import usages
+from tachyon.db import neo4j_api
+from tachyon.db import schema
 
 
-def create_app(config: dict | None = None) -> Flask:
-    """Create and configure the Flask application."""
-    app = Flask(__name__)
+def create_app(config=None):
+    """Create and configure the Flask application.
+
+    :param config: Optional configuration dictionary to override defaults
+    :returns: Configured Flask application instance
+    """
+    app = flask.Flask(__name__)
 
     # Defaults
     app.config.setdefault("AUTH_STRATEGY", "noauth2")
@@ -57,9 +64,12 @@ def create_app(config: dict | None = None) -> Flask:
     return app
 
 
-def _init_neo4j(app: Flask) -> None:
-    """Initialize Neo4j driver and apply schema."""
-    driver = init_driver(
+def _init_neo4j(app):
+    """Initialize Neo4j driver and apply schema.
+
+    :param app: Flask application instance
+    """
+    driver = neo4j_api.init_driver(
         app.config["NEO4J_URI"],
         app.config.get("NEO4J_USERNAME"),
         app.config.get("NEO4J_PASSWORD"),
@@ -68,7 +78,7 @@ def _init_neo4j(app: Flask) -> None:
 
     if app.config.get("AUTO_APPLY_SCHEMA", True):
         with driver.session() as session:
-            apply_schema(session)
+            schema.apply_schema(session)
 
 
 def get_driver():
@@ -77,7 +87,9 @@ def get_driver():
     This supports the functional test pattern where the app is created
     during test discovery (without DB), and the driver is configured
     later when the test fixture sets up the database.
+
+    :returns: Neo4j driver instance
     """
-    if "neo4j_driver" not in current_app.extensions:
-        _init_neo4j(current_app._get_current_object())
-    return current_app.extensions["neo4j_driver"]
+    if "neo4j_driver" not in flask.current_app.extensions:
+        _init_neo4j(flask.current_app._get_current_object())
+    return flask.current_app.extensions["neo4j_driver"]

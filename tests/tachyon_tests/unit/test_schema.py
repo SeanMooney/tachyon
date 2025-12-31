@@ -1,20 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Unit tests for Neo4j schema definitions."""
 
-import unittest
+from oslotest import base
+
+from tachyon.db import schema
 
 
-class TestSchemaDefinitions(unittest.TestCase):
+class TestSchemaDefinitions(base.BaseTestCase):
     """Tests for schema module constants."""
 
     def test_uniqueness_constraints_list(self):
         """Test that uniqueness constraints are properly defined."""
-        from tachyon.db.schema import UNIQUENESS_CONSTRAINTS
-
-        self.assertIsInstance(UNIQUENESS_CONSTRAINTS, list)
-        self.assertGreater(len(UNIQUENESS_CONSTRAINTS), 0)
+        self.assertIsInstance(schema.UNIQUENESS_CONSTRAINTS, list)
+        self.assertGreater(len(schema.UNIQUENESS_CONSTRAINTS), 0)
 
         # Should have constraints for core entities
-        all_constraints = " ".join(UNIQUENESS_CONSTRAINTS)
+        all_constraints = " ".join(schema.UNIQUENESS_CONSTRAINTS)
         self.assertIn("ResourceProvider", all_constraints)
         self.assertIn("Consumer", all_constraints)
         self.assertIn("Trait", all_constraints)
@@ -26,53 +28,36 @@ class TestSchemaDefinitions(unittest.TestCase):
         Note: Property existence constraints require Neo4j Enterprise Edition.
         In Community Edition, we rely on application logic to enforce these.
         """
-        from tachyon.db.schema import EXISTENCE_CONSTRAINTS
-
-        self.assertIsInstance(EXISTENCE_CONSTRAINTS, list)
+        self.assertIsInstance(schema.EXISTENCE_CONSTRAINTS, list)
         # Currently empty due to Neo4j Community Edition limitation
 
     def test_indexes_list(self):
         """Test that indexes are properly defined."""
-        from tachyon.db.schema import INDEXES
-
-        self.assertIsInstance(INDEXES, list)
-        self.assertGreater(len(INDEXES), 0)
+        self.assertIsInstance(schema.INDEXES, list)
+        self.assertGreater(len(schema.INDEXES), 0)
 
         # All indexes should start with CREATE INDEX
-        for idx in INDEXES:
+        for idx in schema.INDEXES:
             self.assertTrue(idx.strip().startswith("CREATE INDEX"))
 
     def test_schema_statements_combines_all(self):
         """Test that SCHEMA_STATEMENTS combines all schema definitions."""
-        from tachyon.db.schema import (
-            EXISTENCE_CONSTRAINTS,
-            INDEXES,
-            SCHEMA_STATEMENTS,
-            UNIQUENESS_CONSTRAINTS,
-        )
-
         expected_count = (
-            len(UNIQUENESS_CONSTRAINTS) + len(EXISTENCE_CONSTRAINTS) + len(INDEXES)
+            len(schema.UNIQUENESS_CONSTRAINTS)
+            + len(schema.EXISTENCE_CONSTRAINTS)
+            + len(schema.INDEXES)
         )
-        self.assertEqual(len(SCHEMA_STATEMENTS), expected_count)
+        self.assertEqual(len(schema.SCHEMA_STATEMENTS), expected_count)
 
     def test_schema_uses_if_not_exists(self):
         """Test that all schema statements use IF NOT EXISTS for idempotency."""
-        from tachyon.db.schema import SCHEMA_STATEMENTS
-
-        for statement in SCHEMA_STATEMENTS:
+        for statement in schema.SCHEMA_STATEMENTS:
             self.assertIn(
                 "IF NOT EXISTS",
                 statement,
-                f"Statement missing IF NOT EXISTS: {statement[:50]}...",
+                "Statement missing IF NOT EXISTS: %s..." % statement[:50],
             )
 
     def test_apply_schema_function_exists(self):
         """Test that apply_schema function is defined."""
-        from tachyon.db.schema import apply_schema
-
-        self.assertTrue(callable(apply_schema))
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertTrue(callable(schema.apply_schema))

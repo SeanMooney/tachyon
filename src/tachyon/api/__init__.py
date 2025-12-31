@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """API package."""
 
-from tachyon.api.app import create_app  # noqa: F401
+from tachyon.api import app  # noqa: F401

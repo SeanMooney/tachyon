@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Helpers for parsing and checking Placement microversions.
 
 Backed by the upstream ``microversion-parse`` library for correctness.
@@ -5,7 +7,7 @@ Backed by the upstream ``microversion-parse`` library for correctness.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
 
 import microversion_parse
 
@@ -16,32 +18,48 @@ MAX_SUPPORTED_MINOR = 39
 LATEST_MINOR = 999
 
 
-@dataclass(frozen=True, order=True)
+@dataclasses.dataclass(frozen=True, order=True)
 class Microversion:
-    """Parsed microversion consisting of major/minor components."""
+    """Parsed microversion consisting of major/minor components.
+
+    :ivar major: Major version number (always 1 for Placement)
+    :ivar minor: Minor version number
+    """
 
     major: int
     minor: int
 
-    def is_at_least(self, minor: int) -> bool:
-        """Check if this version is >= the given minor (major is fixed at 1)."""
+    def is_at_least(self, minor):
+        """Check if this version is >= the given minor (major is fixed at 1).
+
+        :param minor: Minor version to compare against
+        :returns: True if this version's minor is >= the given minor
+        """
         return self.minor >= minor
 
 
-def _extract(header_value: str | None) -> str | None:
-    """Use microversion-parse to extract the version string from headers."""
+def _extract(header_value):
+    """Use microversion-parse to extract the version string from headers.
+
+    :param header_value: Value of the OpenStack-API-Version header
+    :returns: Version string or None
+    """
     headers = {}
     if header_value:
         headers["openstack-api-version"] = header_value
 
     try:
         return microversion_parse.get_version(headers, service_type="placement")
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 
-def parse(header_value: str | None) -> Microversion:
-    """Parse the OpenStack-API-Version header into a Microversion."""
+def parse(header_value):
+    """Parse the OpenStack-API-Version header into a Microversion.
+
+    :param header_value: Value of the OpenStack-API-Version header
+    :returns: Microversion instance
+    """
     version_str = _extract(header_value)
     if not version_str:
         return Microversion(1, 0)
@@ -52,6 +70,5 @@ def parse(header_value: str | None) -> Microversion:
     try:
         version_tuple = microversion_parse.parse_version_string(version_str)
         return Microversion(int(version_tuple.major), int(version_tuple.minor))
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return Microversion(1, 0)
-

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Usages API blueprint.
 
 Implements Placement-compatible usage reporting.
@@ -5,36 +7,43 @@ Implements Placement-compatible usage reporting.
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, jsonify, request
+import flask
 
-from tachyon.api.errors import BadRequest, NotFound
+from tachyon.api import errors
 
-bp = Blueprint("usages", __name__)
+bp = flask.Blueprint("usages", __name__)
 
 
 def _driver():
-    """Get the Neo4j driver from the Flask app."""
-    from tachyon.api.app import get_driver
+    """Get the Neo4j driver from the Flask app.
 
-    return get_driver()
+    :returns: Neo4j driver instance
+    """
+    from tachyon.api import app
+    return app.get_driver()
 
 
-@bp.route("/resource_providers/<string:uuid>/usages", methods=["GET"])
-def provider_usages(uuid: str) -> tuple[Response, int]:
+@bp.route("/resource_providers/<string:rp_uuid>/usages", methods=["GET"])
+def provider_usages(rp_uuid):
     """Get resource usages for a resource provider.
 
     Returns the sum of allocations against each resource class
     on the specified provider.
+
+    :param rp_uuid: Resource provider UUID
+    :returns: Tuple of (response, status_code)
     """
     with _driver().session() as session:
         # Check provider exists
         provider = session.run(
             "MATCH (rp:ResourceProvider {uuid: $uuid}) RETURN rp",
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
 
         if not provider:
-            raise NotFound(f"Resource provider {uuid} not found.")
+            raise errors.NotFound(
+                "Resource provider %s not found." % rp_uuid
+            )
 
         rows = session.run(
             """
@@ -44,31 +53,31 @@ def provider_usages(uuid: str) -> tuple[Response, int]:
             OPTIONAL MATCH (inv)<-[alloc:CONSUMES]-()
             RETURN rc.name AS rc, COALESCE(sum(alloc.used), 0) AS used
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
         )
         usages = {row["rc"]: int(row["used"]) for row in rows}
 
-    return jsonify(
-        {
-            "resource_provider_generation": provider["rp"].get("generation", 0),
-            "usages": usages,
-        }
-    ), 200
+    return flask.jsonify({
+        "resource_provider_generation": provider["rp"].get("generation", 0),
+        "usages": usages,
+    }), 200
 
 
 @bp.route("/usages", methods=["GET"])
-def project_usages() -> tuple[Response, int]:
+def project_usages():
     """Get resource usages for a project.
 
     Query Parameters:
         project_id: Required. Project ID to get usages for.
 
     Returns the sum of allocations for all consumers owned by the project.
+
+    :returns: Tuple of (response, status_code)
     """
-    project_id = request.args.get("project_id")
+    project_id = flask.request.args.get("project_id")
 
     if not project_id:
-        raise BadRequest("'project_id' is a required query parameter.")
+        raise errors.BadRequest("'project_id' is a required query parameter.")
 
     with _driver().session() as session:
         rows = session.run(
@@ -81,4 +90,4 @@ def project_usages() -> tuple[Response, int]:
         )
         usages = {row["rc"]: int(row["used"]) for row in rows}
 
-    return jsonify({"usages": usages}), 200
+    return flask.jsonify({"usages": usages}), 200

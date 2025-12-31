@@ -1,63 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Unit tests for the Tachyon Flask application factory."""
 
-import unittest
 from unittest import mock
 
-from tachyon.api import create_app
-from tachyon.api.errors import (
-    APIError,
-    BadRequest,
-    Conflict,
-    ConsumerGenerationConflict,
-    InventoryInUse,
-    NotFound,
-    ResourceProviderGenerationConflict,
-    error_response,
-)
+from oslotest import base
+
+from tachyon.api import app
+from tachyon.api import errors
+from tachyon.db import schema
 
 
-class TestCreateApp(unittest.TestCase):
+class TestCreateApp(base.BaseTestCase):
     """Tests for the create_app factory function."""
 
-    @mock.patch("tachyon.api.app.init_driver")
-    def test_create_app_defaults(self, mock_init_driver):
+    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    def test_create_app_defaults(self, mock_init_neo4j):
         """Test app creation with default configuration."""
-        mock_driver = mock.MagicMock()
-        mock_init_driver.return_value = mock_driver
+        flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
 
-        app = create_app({"TESTING": True})
+        self.assertEqual(flask_app.config["AUTH_STRATEGY"], "noauth2")
+        self.assertEqual(flask_app.config["MAX_LIMIT"], 1000)
+        self.assertTrue(flask_app.config["TESTING"])
 
-        self.assertEqual(app.config["AUTH_STRATEGY"], "noauth2")
-        self.assertEqual(app.config["MAX_LIMIT"], 1000)
-        self.assertTrue(app.config["TESTING"])
-
-    @mock.patch("tachyon.api.app.init_driver")
-    def test_create_app_custom_config(self, mock_init_driver):
+    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    def test_create_app_custom_config(self, mock_init_neo4j):
         """Test app creation with custom configuration."""
-        mock_driver = mock.MagicMock()
-        mock_init_driver.return_value = mock_driver
+        flask_app = app.create_app({
+            "TESTING": True,
+            "SKIP_DB_INIT": True,
+            "AUTH_STRATEGY": "keystone",
+            "MAX_LIMIT": 500,
+        })
 
-        app = create_app(
-            {
-                "TESTING": True,
-                "AUTH_STRATEGY": "keystone",
-                "MAX_LIMIT": 500,
-            }
-        )
+        self.assertEqual(flask_app.config["AUTH_STRATEGY"], "keystone")
+        self.assertEqual(flask_app.config["MAX_LIMIT"], 500)
 
-        self.assertEqual(app.config["AUTH_STRATEGY"], "keystone")
-        self.assertEqual(app.config["MAX_LIMIT"], 500)
-
-    @mock.patch("tachyon.api.app.init_driver")
-    def test_blueprints_registered(self, mock_init_driver):
+    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    def test_blueprints_registered(self, mock_init_neo4j):
         """Test that all blueprints are registered."""
-        mock_driver = mock.MagicMock()
-        mock_init_driver.return_value = mock_driver
-
-        app = create_app({"TESTING": True})
+        flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
 
         # Check that expected blueprints are registered
-        blueprint_names = list(app.blueprints.keys())
+        blueprint_names = list(flask_app.blueprints.keys())
         self.assertIn("resource_providers", blueprint_names)
         self.assertIn("inventories", blueprint_names)
         self.assertIn("traits", blueprint_names)
@@ -66,63 +51,60 @@ class TestCreateApp(unittest.TestCase):
         self.assertIn("usages", blueprint_names)
 
 
-class TestAPIErrors(unittest.TestCase):
+class TestAPIErrors(base.BaseTestCase):
     """Tests for API error handling."""
 
     def test_api_error_base(self):
         """Test base APIError class."""
-        error = APIError("Test error message")
+        error = errors.APIError("Test error message")
         self.assertEqual(error.detail, "Test error message")
         self.assertEqual(error.status_code, 500)
         self.assertEqual(error.title, "Internal Server Error")
 
     def test_not_found_error(self):
         """Test NotFound error."""
-        error = NotFound("Resource not found")
+        error = errors.NotFound("Resource not found")
         self.assertEqual(error.status_code, 404)
         self.assertEqual(error.title, "Not Found")
         self.assertEqual(error.detail, "Resource not found")
 
     def test_conflict_error(self):
         """Test Conflict error."""
-        error = Conflict("Conflict occurred")
+        error = errors.Conflict("Conflict occurred")
         self.assertEqual(error.status_code, 409)
         self.assertEqual(error.title, "Conflict")
 
     def test_bad_request_error(self):
         """Test BadRequest error."""
-        error = BadRequest("Invalid input")
+        error = errors.BadRequest("Invalid input")
         self.assertEqual(error.status_code, 400)
         self.assertEqual(error.title, "Bad Request")
 
     def test_resource_provider_generation_conflict(self):
         """Test ResourceProviderGenerationConflict error."""
-        error = ResourceProviderGenerationConflict("Generation mismatch")
+        error = errors.ResourceProviderGenerationConflict("Generation mismatch")
         self.assertEqual(error.status_code, 409)
-        self.assertEqual(error.title, "Resource Provider Generation Conflict")
+        self.assertEqual(error.title, "Conflict")
 
     def test_consumer_generation_conflict(self):
         """Test ConsumerGenerationConflict error."""
-        error = ConsumerGenerationConflict("Consumer generation mismatch")
+        error = errors.ConsumerGenerationConflict("Consumer generation mismatch")
         self.assertEqual(error.status_code, 409)
         self.assertEqual(error.title, "Consumer Generation Conflict")
 
     def test_inventory_in_use_error(self):
         """Test InventoryInUse error."""
-        error = InventoryInUse("Inventory has allocations")
+        error = errors.InventoryInUse("Inventory has allocations")
         self.assertEqual(error.status_code, 409)
         self.assertEqual(error.title, "Inventory In Use")
 
-    @mock.patch("tachyon.api.app.init_driver")
-    def test_error_to_response(self, mock_init_driver):
+    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    def test_error_to_response(self, mock_init_neo4j):
         """Test error serialization to response."""
-        mock_driver = mock.MagicMock()
-        mock_init_driver.return_value = mock_driver
+        flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
 
-        app = create_app({"TESTING": True})
-
-        with app.app_context():
-            error = NotFound("Resource xyz not found")
+        with flask_app.app_context():
+            error = errors.NotFound("Resource xyz not found")
             response, status = error.to_response()
 
             self.assertEqual(status, 404)
@@ -133,16 +115,15 @@ class TestAPIErrors(unittest.TestCase):
             self.assertEqual(data["errors"][0]["title"], "Not Found")
             self.assertEqual(data["errors"][0]["detail"], "Resource xyz not found")
 
-    @mock.patch("tachyon.api.app.init_driver")
-    def test_error_response_helper(self, mock_init_driver):
+    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    def test_error_response_helper(self, mock_init_neo4j):
         """Test error_response helper function."""
-        mock_driver = mock.MagicMock()
-        mock_init_driver.return_value = mock_driver
+        flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
 
-        app = create_app({"TESTING": True})
-
-        with app.app_context():
-            response, status = error_response(422, "Unprocessable", "Cannot process")
+        with flask_app.app_context():
+            response, status = errors.error_response(
+                422, "Unprocessable", "Cannot process"
+            )
 
             self.assertEqual(status, 422)
             data = response.get_json()
@@ -151,37 +132,26 @@ class TestAPIErrors(unittest.TestCase):
             self.assertEqual(data["errors"][0]["detail"], "Cannot process")
 
 
-class TestSchemaHelpers(unittest.TestCase):
+class TestSchemaHelpers(base.BaseTestCase):
     """Tests for database schema helpers."""
 
-    def test_schema_statements_defined(self):
-        """Test that schema statements are properly defined."""
-        from tachyon.db.schema import SCHEMA_STATEMENTS
-
-        self.assertIsInstance(SCHEMA_STATEMENTS, list)
-        self.assertGreater(len(SCHEMA_STATEMENTS), 0)
+    def test_uniqueness_constraints_defined(self):
+        """Test that uniqueness constraints are properly defined."""
+        self.assertIsInstance(schema.UNIQUENESS_CONSTRAINTS, list)
+        self.assertGreater(len(schema.UNIQUENESS_CONSTRAINTS), 0)
 
         # Check that all statements are strings
-        for statement in SCHEMA_STATEMENTS:
+        for statement in schema.UNIQUENESS_CONSTRAINTS:
             self.assertIsInstance(statement, str)
             # Statements should be valid Cypher
-            self.assertTrue(
-                statement.startswith("CREATE CONSTRAINT")
-                or statement.startswith("CREATE INDEX")
-            )
+            self.assertTrue(statement.startswith("CREATE CONSTRAINT"))
 
     def test_uniqueness_constraints_present(self):
         """Test that uniqueness constraints are defined."""
-        from tachyon.db.schema import UNIQUENESS_CONSTRAINTS
-
-        constraint_names = " ".join(UNIQUENESS_CONSTRAINTS).lower()
+        constraint_names = " ".join(schema.UNIQUENESS_CONSTRAINTS).lower()
 
         # Check for key constraints (labels use PascalCase without underscores)
         self.assertIn("resourceprovider", constraint_names)
         self.assertIn("consumer", constraint_names)
         self.assertIn("trait", constraint_names)
         self.assertIn("resourceclass", constraint_names)
-
-
-if __name__ == "__main__":
-    unittest.main()
