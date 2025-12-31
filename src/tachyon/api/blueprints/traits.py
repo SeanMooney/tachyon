@@ -7,9 +7,14 @@ Implements Placement-compatible trait management.
 
 from __future__ import annotations
 
+from typing import Any
+
 import flask
+from oslo_log import log
 
 from tachyon.api import errors
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("traits", __name__, url_prefix="/traits")
 # Expose provider-traits endpoints on the Placement-compatible path
@@ -17,21 +22,22 @@ bp = flask.Blueprint("traits", __name__, url_prefix="/traits")
 provider_traits_bp = flask.Blueprint(
     "provider_traits",
     __name__,
-    url_prefix="/resource_providers/<string:rp_uuid>/traits"
+    url_prefix="/resource_providers/<string:rp_uuid>/traits",
 )
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
 @bp.route("", methods=["GET"])
-def list_traits():
+def list_traits() -> tuple[flask.Response, int]:
     """List all traits.
 
     Query Parameters:
@@ -64,7 +70,7 @@ def list_traits():
 
 
 @bp.route("/<string:name>", methods=["PUT"])
-def create_trait(name):
+def create_trait(name: str) -> flask.Response:
     """Create a trait.
 
     Custom traits must start with 'CUSTOM_'.
@@ -93,16 +99,14 @@ def create_trait(name):
 
 
 @bp.route("/<string:name>", methods=["GET"])
-def get_trait(name):
+def get_trait(name: str) -> tuple[flask.Response, int]:
     """Get a specific trait.
 
     :param name: Trait name
     :returns: Tuple of (response, status_code)
     """
     with _driver().session() as session:
-        res = session.run(
-            "MATCH (t:Trait {name: $name}) RETURN t", name=name
-        ).single()
+        res = session.run("MATCH (t:Trait {name: $name}) RETURN t", name=name).single()
 
         if not res:
             raise errors.NotFound("Trait %s not found." % name)
@@ -111,7 +115,7 @@ def get_trait(name):
 
 
 @bp.route("/<string:name>", methods=["DELETE"])
-def delete_trait(name):
+def delete_trait(name: str) -> flask.Response:
     """Delete a trait.
 
     Will fail if trait is associated with any resource providers.
@@ -140,8 +144,7 @@ def delete_trait(name):
         if in_use and in_use["cnt"] > 0:
             raise errors.Conflict(
                 "Trait %s is associated with %d "
-                "resource provider(s) and cannot be deleted."
-                % (name, in_use["cnt"])
+                "resource provider(s) and cannot be deleted." % (name, in_use["cnt"])
             )
 
         session.run("MATCH (t:Trait {name: $name}) DELETE t", name=name)
@@ -155,7 +158,7 @@ def delete_trait(name):
     methods=["GET"],
     endpoint="get_provider_traits_via_traits",
 )
-def get_provider_traits(rp_uuid):
+def get_provider_traits(rp_uuid: str) -> tuple[flask.Response, int]:
     """Get traits for a resource provider.
 
     :param rp_uuid: Resource provider UUID
@@ -172,14 +175,14 @@ def get_provider_traits(rp_uuid):
         ).single()
 
         if not res or res["generation"] is None:
-            raise errors.NotFound(
-                "Resource provider %s not found." % rp_uuid
-            )
+            raise errors.NotFound("Resource provider %s not found." % rp_uuid)
 
-    return flask.jsonify({
-        "resource_provider_generation": res["generation"],
-        "traits": sorted(res["traits"]),
-    }), 200
+    return flask.jsonify(
+        {
+            "resource_provider_generation": res["generation"],
+            "traits": sorted(res["traits"]),
+        }
+    ), 200
 
 
 @bp.route(
@@ -187,7 +190,7 @@ def get_provider_traits(rp_uuid):
     methods=["PUT"],
     endpoint="put_provider_traits_via_traits",
 )
-def put_provider_traits(rp_uuid):
+def put_provider_traits(rp_uuid: str) -> tuple[flask.Response, int]:
     """Set traits for a resource provider.
 
     Request Body:
@@ -199,12 +202,10 @@ def put_provider_traits(rp_uuid):
     """
     data = flask.request.get_json(force=True, silent=True) or {}
     generation = data.get("resource_provider_generation")
-    traits = data.get("traits", [])
+    traits: list[str] = data.get("traits", [])
 
     if generation is None:
-        raise errors.BadRequest(
-            "'resource_provider_generation' is a required field."
-        )
+        raise errors.BadRequest("'resource_provider_generation' is a required field.")
 
     with _driver().session() as session:
         # Check provider exists and generation matches
@@ -214,9 +215,7 @@ def put_provider_traits(rp_uuid):
         ).single()
 
         if not provider:
-            raise errors.NotFound(
-                "Resource provider %s not found." % rp_uuid
-            )
+            raise errors.NotFound("Resource provider %s not found." % rp_uuid)
 
         if provider["rp"].get("generation", 0) != generation:
             raise errors.ResourceProviderGenerationConflict(
@@ -264,10 +263,12 @@ def put_provider_traits(rp_uuid):
             tx.rollback()
             raise
 
-    return flask.jsonify({
-        "resource_provider_generation": result["generation"],
-        "traits": sorted(traits),
-    }), 200
+    return flask.jsonify(
+        {
+            "resource_provider_generation": result["generation"],
+            "traits": sorted(traits),
+        }
+    ), 200
 
 
 @bp.route(
@@ -275,7 +276,7 @@ def put_provider_traits(rp_uuid):
     methods=["DELETE"],
     endpoint="delete_provider_traits_via_traits",
 )
-def delete_provider_traits(rp_uuid):
+def delete_provider_traits(rp_uuid: str) -> flask.Response:
     """Delete all traits from a resource provider.
 
     :param rp_uuid: Resource provider UUID
@@ -288,9 +289,7 @@ def delete_provider_traits(rp_uuid):
         ).single()
 
         if not provider:
-            raise errors.NotFound(
-                "Resource provider %s not found." % rp_uuid
-            )
+            raise errors.NotFound("Resource provider %s not found." % rp_uuid)
 
         session.run(
             """
@@ -304,12 +303,8 @@ def delete_provider_traits(rp_uuid):
 
 
 # Register provider trait handlers on the placement-standard path
-provider_traits_bp.add_url_rule(
-    "", view_func=get_provider_traits, methods=["GET"]
-)
-provider_traits_bp.add_url_rule(
-    "", view_func=put_provider_traits, methods=["PUT"]
-)
+provider_traits_bp.add_url_rule("", view_func=get_provider_traits, methods=["GET"])
+provider_traits_bp.add_url_rule("", view_func=put_provider_traits, methods=["PUT"])
 provider_traits_bp.add_url_rule(
     "", view_func=delete_provider_traits, methods=["DELETE"]
 )

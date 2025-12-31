@@ -5,8 +5,13 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator
+from typing import Any
 
 import neo4j
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
 
 
 class Neo4jClient:
@@ -15,18 +20,24 @@ class Neo4jClient:
     Provides a simple context manager interface for Neo4j sessions.
     """
 
-    def __init__(self, uri, username=None, password=None):
+    def __init__(
+        self, uri: str, username: str | None = None, password: str | None = None
+    ) -> None:
         """Initialize the Neo4j client.
 
         :param uri: Neo4j database URI (bolt://...)
         :param username: Optional database username
         :param password: Optional database password
         """
-        auth = (username, password) if username and password else None
-        self._driver = neo4j.GraphDatabase.driver(uri, auth=auth)
+        LOG.debug("Connecting to Neo4j at %s", uri)
+        auth: tuple[str, str] | None = None
+        if username and password:
+            auth = (username, password)
+        self._driver: neo4j.Driver = neo4j.GraphDatabase.driver(uri, auth=auth)
+        LOG.info("Neo4j driver created for %s", uri)
 
     @contextlib.contextmanager
-    def session(self):
+    def session(self) -> Generator[Any, None, None]:
         """Create a database session context manager.
 
         :yields: Neo4j session
@@ -34,12 +45,13 @@ class Neo4jClient:
         with self._driver.session() as session:
             yield session
 
-    def close(self):
+    def close(self) -> None:
         """Close the database driver."""
+        LOG.debug("Closing Neo4j driver")
         self._driver.close()
 
 
-def init_driver(uri, username, password):
+def init_driver(uri: str, username: str | None, password: str | None) -> Neo4jClient:
     """Initialize a Neo4j client.
 
     :param uri: Neo4j database URI

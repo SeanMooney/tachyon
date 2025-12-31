@@ -22,6 +22,11 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-requests
+          - types-Flask
           - flask
+          - neo4j
+          - oslo.config
+          - oslo.log
+          - microversion-parse
         args: [--ignore-missing-imports]
         files: ^src/

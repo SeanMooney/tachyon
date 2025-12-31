@@ -13,36 +13,70 @@ Error responses follow the OpenStack Placement API format::
             }
         ]
     }
+
+Exception classes use the OpenStack msg_fmt pattern for consistent
+error message formatting with keyword argument substitution.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import flask
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
 
 
-class APIError(Exception):
-    """Base exception for API errors with Placement-compatible formatting."""
+class TachyonException(Exception):
+    """Base exception for all Tachyon errors.
 
+    Uses OpenStack-style msg_fmt for consistent message formatting.
+    Supports keyword argument substitution via %(key)s syntax.
+
+    :ivar msg_fmt: Default message format string
+    :ivar status_code: HTTP status code for this error type
+    :ivar title: Short error title for response
+    :ivar code: Optional programmatic error code
+    """
+
+    msg_fmt = "%(reason)s"
     status_code = 500
     title = "Internal Server Error"
-    code = None
+    code: str | None = None
 
-    def __init__(self, detail=None, code=None):
-        """Initialize the API error.
+    def __init__(self, reason: str | None = None, **kwargs: Any) -> None:
+        """Initialize the exception with message formatting.
 
-        :param detail: Detailed error message
-        :param code: Optional error code for programmatic handling
+        :param reason: Simple reason string (for backward compatibility)
+        :param kwargs: Keyword arguments for msg_fmt substitution
         """
-        super(APIError, self).__init__(detail)
-        self.detail = detail or self.title
-        self.code = code or getattr(self, "code", None)
+        # Handle code override from kwargs
+        if "code" in kwargs:
+            self.code = kwargs.pop("code")
 
-    def to_response(self):
+        self.kwargs = kwargs
+        if reason is not None:
+            self.kwargs["reason"] = reason
+
+        # Format the message using msg_fmt and kwargs
+        try:
+            self.detail = self.msg_fmt % self.kwargs
+        except (KeyError, TypeError):
+            # Fallback if formatting fails
+            if reason:
+                self.detail = reason
+            else:
+                self.detail = self.msg_fmt
+
+        super().__init__(self.detail)
+
+    def to_response(self) -> tuple[flask.Response, int]:
         """Convert exception to a Placement-compatible JSON response.
 
         :returns: Tuple of (JSON response, status code)
         """
-        error = {
+        error: dict[str, Any] = {
             "status": self.status_code,
             "title": self.title,
             "detail": self.detail,
@@ -54,80 +88,180 @@ class APIError(Exception):
         return flask.jsonify(body), self.status_code
 
 
-class NotFound(APIError):
-    """Resource not found (404)."""
+# Backward compatibility alias
+APIError = TachyonException
 
+
+class NotFound(TachyonException):
+    """Resource not found (404).
+
+    :Usage:
+        raise NotFound(resource_type="resource provider", uuid=rp_uuid)
+        raise NotFound(reason="Custom not found message")
+    """
+
+    msg_fmt = "No %(resource_type)s with uuid %(uuid)s found"
     status_code = 404
     title = "Not Found"
 
+    def __init__(
+        self,
+        reason: str | None = None,
+        resource_type: str | None = None,
+        uuid: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if resource_type is not None:
+            kwargs["resource_type"] = resource_type
+        if uuid is not None:
+            kwargs["uuid"] = uuid
+        super().__init__(reason=reason, **kwargs)
 
-class Conflict(APIError):
-    """Resource conflict, typically generation mismatch (409)."""
 
+class Conflict(TachyonException):
+    """Resource conflict, typically generation mismatch (409).
+
+    :Usage:
+        raise Conflict(resource_type="resource provider", uuid=rp_uuid)
+        raise Conflict(reason="Generation mismatch")
+    """
+
+    msg_fmt = "Conflict for %(resource_type)s %(uuid)s"
     status_code = 409
     title = "Conflict"
 
 
-class Forbidden(APIError):
-    """Forbidden access (403)."""
+class Forbidden(TachyonException):
+    """Forbidden access (403).
 
+    :Usage:
+        raise Forbidden(reason="Admin role required.")
+    """
+
+    msg_fmt = "Access forbidden: %(reason)s"
     status_code = 403
     title = "Forbidden"
 
 
-class BadRequest(APIError):
-    """Invalid request (400)."""
+class BadRequest(TachyonException):
+    """Invalid request (400).
 
+    :Usage:
+        raise BadRequest(reason="'name' is a required property")
+        raise BadRequest(field="name", error="is required")
+    """
+
+    msg_fmt = "%(reason)s"
     status_code = 400
     title = "Bad Request"
 
 
 class InvalidInventory(BadRequest):
-    """Invalid inventory values."""
+    """Invalid inventory values.
 
+    :Usage:
+        raise InvalidInventory(field="total", error="must be positive")
+    """
+
+    msg_fmt = "Invalid inventory: %(field)s %(error)s"
     title = "Invalid Inventory"
 
 
 class InventoryInUse(Conflict):
-    """Cannot delete inventory with active allocations."""
+    """Cannot delete inventory with active allocations.
 
+    :Usage:
+        raise InventoryInUse(resource_class=rc_name, allocation_count=5)
+    """
+
+    msg_fmt = (
+        "Inventory for %(resource_class)s has %(allocation_count)s active allocations"
+    )
     title = "Inventory In Use"
 
 
 class ResourceProviderInUse(Conflict):
-    """Cannot delete resource provider with allocations or children."""
+    """Cannot delete resource provider with allocations or children.
 
+    :Usage:
+        raise ResourceProviderInUse(uuid=rp_uuid, reason="has children")
+    """
+
+    msg_fmt = "Unable to delete resource provider %(uuid)s: %(reason)s"
     title = "Resource Provider In Use"
 
 
 class ConsumerGenerationConflict(Conflict):
-    """Consumer generation mismatch."""
+    """Consumer generation mismatch.
 
+    :Usage:
+        raise ConsumerGenerationConflict(uuid=consumer_uuid, expected=0, got=1)
+    """
+
+    msg_fmt = (
+        "Consumer %(uuid)s generation mismatch: expected %(expected)s, got %(got)s"
+    )
     title = "Consumer Generation Conflict"
 
 
 class ResourceProviderGenerationConflict(Conflict):
-    """Resource provider generation mismatch."""
+    """Resource provider generation mismatch.
 
+    :Usage:
+        raise ResourceProviderGenerationConflict(uuid=rp_uuid)
+    """
+
+    msg_fmt = "resource provider generation conflict"
     title = "Conflict"
     code = "placement.concurrent_update"
 
 
-class NotAcceptable(APIError):
-    """Not acceptable content type (406)."""
+class NotAcceptable(TachyonException):
+    """Not acceptable content type (406).
 
+    :Usage:
+        raise NotAcceptable(reason="Only application/json is provided")
+    """
+
+    msg_fmt = "Not acceptable: %(reason)s"
     status_code = 406
     title = "Not Acceptable"
 
 
-class UnsupportedMediaType(APIError):
-    """Unsupported media type (415)."""
+class UnsupportedMediaType(TachyonException):
+    """Unsupported media type (415).
 
+    :Usage:
+        raise UnsupportedMediaType(content_type="text/plain")
+    """
+
+    msg_fmt = "The media type %(content_type)s is not supported, use application/json"
     status_code = 415
     title = "Unsupported Media Type"
 
 
-def error_response(status, title, detail):
+class DuplicateName(Conflict):
+    """Resource with this name already exists.
+
+    :Usage:
+        raise DuplicateName(resource_type="resource provider", name=name)
+    """
+
+    msg_fmt = "Conflicting %(resource_type)s name: %(name)s already exists"
+    code = "placement.duplicate_name"
+
+
+class DuplicateUUID(Conflict):
+    """Resource with this UUID already exists.
+
+    :Usage:
+        raise DuplicateUUID(resource_type="resource provider", uuid=uuid)
+    """
+
+    msg_fmt = "Conflicting %(resource_type)s uuid: %(uuid)s already exists"
+
+
+def error_response(status: int, title: str, detail: str) -> tuple[flask.Response, int]:
     """Create a Placement-compatible error response.
 
     :param status: HTTP status code
@@ -147,59 +281,63 @@ def error_response(status, title, detail):
     return flask.jsonify(body), status
 
 
-def register_handlers(app):
-    """Register error handlers for common HTTP errors and APIError exceptions.
+def register_handlers(app: flask.Flask) -> None:
+    """Register error handlers for common HTTP errors and TachyonException.
 
     :param app: Flask application instance
     """
+    LOG.debug("Registering error handlers")
 
-    @app.errorhandler(APIError)
-    def handle_api_error(error):
-        """Handle APIError subclasses."""
+    @app.errorhandler(TachyonException)
+    def handle_tachyon_error(error: TachyonException) -> tuple[flask.Response, int]:
+        """Handle TachyonException subclasses."""
+        LOG.debug("Handling %s: %s", type(error).__name__, error.detail)
         return error.to_response()
 
     @app.errorhandler(404)
-    def not_found(error):
+    def not_found(error: Exception) -> tuple[flask.Response, int]:
         return error_response(404, "Not Found", "The resource could not be found.")
 
     @app.errorhandler(409)
-    def conflict(error):
+    def conflict(error: Exception) -> tuple[flask.Response, int]:
         return error_response(
             409, "Conflict", "A conflict occurred with the current state."
         )
 
     @app.errorhandler(400)
-    def bad_request(error):
+    def bad_request(error: Exception) -> tuple[flask.Response, int]:
         return error_response(400, "Bad Request", "The request is invalid.")
 
     @app.errorhandler(405)
-    def method_not_allowed(error):
+    def method_not_allowed(error: Exception) -> tuple[flask.Response, int]:
         method = flask.request.method
         resp, status = error_response(
-            405, "Method Not Allowed",
-            "The method %s is not allowed for this resource." % method
+            405,
+            "Method Not Allowed",
+            "The method %s is not allowed for this resource." % method,
         )
         if hasattr(error, "valid_methods") and error.valid_methods:
             resp.headers["Allow"] = ", ".join(sorted(error.valid_methods))
         return resp, status
 
     @app.errorhandler(406)
-    def not_acceptable(error):
+    def not_acceptable(error: Exception) -> tuple[flask.Response, int]:
         return error_response(
             406, "Not Acceptable", "Only application/json is provided"
         )
 
     @app.errorhandler(415)
-    def unsupported_media_type(error):
+    def unsupported_media_type(error: Exception) -> tuple[flask.Response, int]:
         content_type = flask.request.content_type
         return error_response(
-            415, "Unsupported Media Type",
-            "The media type %s is not supported, use application/json"
-            % content_type
+            415,
+            "Unsupported Media Type",
+            "The media type %s is not supported, use application/json" % content_type,
         )
 
     @app.errorhandler(500)
-    def internal_error(error):
+    def internal_error(error: Exception) -> tuple[flask.Response, int]:
+        LOG.exception("Internal server error")
         return error_response(
             500, "Internal Server Error", "An unexpected error occurred."
         )

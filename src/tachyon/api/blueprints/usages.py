@@ -7,24 +7,30 @@ Implements Placement-compatible usage reporting.
 
 from __future__ import annotations
 
+from typing import Any
+
 import flask
+from oslo_log import log
 
 from tachyon.api import errors
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("usages", __name__)
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
 @bp.route("/resource_providers/<string:rp_uuid>/usages", methods=["GET"])
-def provider_usages(rp_uuid):
+def provider_usages(rp_uuid: str) -> tuple[flask.Response, int]:
     """Get resource usages for a resource provider.
 
     Returns the sum of allocations against each resource class
@@ -41,9 +47,7 @@ def provider_usages(rp_uuid):
         ).single()
 
         if not provider:
-            raise errors.NotFound(
-                "Resource provider %s not found." % rp_uuid
-            )
+            raise errors.NotFound("Resource provider %s not found." % rp_uuid)
 
         rows = session.run(
             """
@@ -57,14 +61,16 @@ def provider_usages(rp_uuid):
         )
         usages = {row["rc"]: int(row["used"]) for row in rows}
 
-    return flask.jsonify({
-        "resource_provider_generation": provider["rp"].get("generation", 0),
-        "usages": usages,
-    }), 200
+    return flask.jsonify(
+        {
+            "resource_provider_generation": provider["rp"].get("generation", 0),
+            "usages": usages,
+        }
+    ), 200
 
 
 @bp.route("/usages", methods=["GET"])
-def project_usages():
+def project_usages() -> tuple[flask.Response, int]:
     """Get resource usages for a project.
 
     Query Parameters:

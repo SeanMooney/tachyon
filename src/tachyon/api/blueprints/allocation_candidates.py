@@ -8,38 +8,42 @@ Implements Placement-compatible allocation candidate queries for scheduling.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import flask
+from oslo_log import log
 
-from tachyon.api import errors
-from tachyon.api import microversion
+from tachyon.api import errors, microversion
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint(
     "allocation_candidates", __name__, url_prefix="/allocation_candidates"
 )
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
-def _mv():
+def _mv() -> microversion.Microversion:
     """Return the parsed microversion from the request context.
 
     :returns: Microversion instance
     """
-    mv = getattr(flask.g, "microversion", None)
+    mv: microversion.Microversion | None = getattr(flask.g, "microversion", None)
     if mv is None:
         return microversion.Microversion(1, 0)
     return mv
 
 
-def _httpdate(dt=None):
+def _httpdate(dt: datetime.datetime | None = None) -> str:
     """Return an HTTP-date string.
 
     :param dt: Optional datetime, defaults to now
@@ -49,7 +53,7 @@ def _httpdate(dt=None):
     return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
 
-def _parse_resources(resources_str):
+def _parse_resources(resources_str: str) -> dict[str, int]:
     """Parse resources query parameter.
 
     Format: CLASS1:AMOUNT1,CLASS2:AMOUNT2,...
@@ -65,7 +69,7 @@ def _parse_resources(resources_str):
             "Got: empty string."
         )
 
-    result = {}
+    result: dict[str, int] = {}
     for part in resources_str.split(","):
         if ":" not in part:
             raise errors.BadRequest(
@@ -87,7 +91,7 @@ def _parse_resources(resources_str):
     return result
 
 
-def _validate_resource_classes(session, resource_classes):
+def _validate_resource_classes(session: Any, resource_classes: list[str]) -> None:
     """Check that all resource classes exist.
 
     :param session: Neo4j session
@@ -112,7 +116,9 @@ def _validate_resource_classes(session, resource_classes):
             )
 
 
-def _get_providers_with_capacity(session, resources):
+def _get_providers_with_capacity(
+    session: Any, resources: dict[str, int]
+) -> list[dict[str, Any]]:
     """Find providers with capacity for all requested resources.
 
     :param session: Neo4j session
@@ -121,7 +127,7 @@ def _get_providers_with_capacity(session, resources):
     """
     # For each resource class, find providers that have inventory
     # and sufficient capacity
-    providers = {}
+    providers: dict[str, dict[str, Any]] = {}
 
     for rc_name, amount in resources.items():
         result = session.run(
@@ -145,7 +151,7 @@ def _get_providers_with_capacity(session, resources):
             amount=amount,
         )
 
-        rc_providers = {}
+        rc_providers: dict[str, dict[str, Any]] = {}
         for row in result:
             rp_uuid = row["uuid"]
             rc_providers[rp_uuid] = {
@@ -164,14 +170,17 @@ def _get_providers_with_capacity(session, resources):
         else:
             # Intersect - keep only providers that have all resources
             providers = {
-                rp_uuid: prov for rp_uuid, prov in providers.items()
+                rp_uuid: prov
+                for rp_uuid, prov in providers.items()
                 if rp_uuid in rc_providers
             }
 
     return list(providers.values())
 
 
-def _build_allocation_requests_dict(providers, resources):
+def _build_allocation_requests_dict(
+    providers: list[dict[str, Any]], resources: dict[str, int]
+) -> list[dict[str, Any]]:
     """Build allocation requests in dict format (1.12+).
 
     :param providers: List of provider dicts
@@ -179,18 +188,13 @@ def _build_allocation_requests_dict(providers, resources):
     :returns: List of allocation request dicts
     """
     return [
-        {
-            "allocations": {
-                prov["uuid"]: {
-                    "resources": resources
-                }
-            }
-        }
-        for prov in providers
+        {"allocations": {prov["uuid"]: {"resources": resources}}} for prov in providers
     ]
 
 
-def _build_allocation_requests_list(providers, resources):
+def _build_allocation_requests_list(
+    providers: list[dict[str, Any]], resources: dict[str, int]
+) -> list[dict[str, Any]]:
     """Build allocation requests in list format (<1.12).
 
     :param providers: List of provider dicts
@@ -200,17 +204,19 @@ def _build_allocation_requests_list(providers, resources):
     return [
         {
             "allocations": [
-                {
-                    "resource_provider": {"uuid": prov["uuid"]},
-                    "resources": resources
-                }
+                {"resource_provider": {"uuid": prov["uuid"]}, "resources": resources}
             ]
         }
         for prov in providers
     ]
 
 
-def _build_provider_summaries(session, provider_uuids, resources, mv):
+def _build_provider_summaries(
+    session: Any,
+    provider_uuids: list[str],
+    resources: dict[str, int],
+    mv: microversion.Microversion,
+) -> dict[str, dict[str, Any]]:
     """Build provider summaries with capacity and usage.
 
     :param session: Neo4j session
@@ -219,7 +225,7 @@ def _build_provider_summaries(session, provider_uuids, resources, mv):
     :param mv: Microversion instance
     :returns: Dict of provider summaries
     """
-    summaries = {}
+    summaries: dict[str, dict[str, Any]] = {}
 
     for rp_uuid in provider_uuids:
         result = session.run(
@@ -239,7 +245,7 @@ def _build_provider_summaries(session, provider_uuids, resources, mv):
             uuid=rp_uuid,
         )
 
-        resource_data = {}
+        resource_data: dict[str, dict[str, int]] = {}
         for row in result:
             rc_name = row["rc_name"]
             # Before 1.27, only show requested resources
@@ -256,7 +262,7 @@ def _build_provider_summaries(session, provider_uuids, resources, mv):
                 "used": used,
             }
 
-        summary = {"resources": resource_data}
+        summary: dict[str, Any] = {"resources": resource_data}
 
         # Add traits at 1.17+
         if mv.is_at_least(17):
@@ -286,9 +292,7 @@ def _build_provider_summaries(session, provider_uuids, resources, mv):
             ).single()
             if tree_result:
                 summary["parent_provider_uuid"] = tree_result["parent_uuid"]
-                summary["root_provider_uuid"] = (
-                    tree_result["root_uuid"] or rp_uuid
-                )
+                summary["root_provider_uuid"] = tree_result["root_uuid"] or rp_uuid
 
         summaries[rp_uuid] = summary
 
@@ -296,7 +300,7 @@ def _build_provider_summaries(session, provider_uuids, resources, mv):
 
 
 @bp.route("", methods=["GET"])
-def list_allocation_candidates():
+def list_allocation_candidates() -> tuple[flask.Response, int]:
     """Get allocation candidates for requested resources.
 
     Query Parameters:
@@ -313,7 +317,7 @@ def list_allocation_candidates():
         raise errors.NotFound("The resource could not be found.")
 
     # Validate allowed query parameters based on microversion
-    allowed_params = {"resources"}
+    allowed_params: set[str] = {"resources"}
     if mv.is_at_least(16):
         allowed_params.add("limit")
     if mv.is_at_least(17):
@@ -323,11 +327,10 @@ def list_allocation_candidates():
     if mv.is_at_least(25):
         allowed_params.add("in_tree")
 
-    unknown = set(flask.request.args.keys()) - allowed_params
+    unknown = set(flask.request.args) - allowed_params
     if unknown:
         raise errors.BadRequest(
-            "Invalid query string parameters: '%s' was unexpected"
-            % list(unknown)[0]
+            "Invalid query string parameters: '%s' was unexpected" % list(unknown)[0]
         )
 
     resources_param = flask.request.args.get("resources")
@@ -337,14 +340,13 @@ def list_allocation_candidates():
     resources = _parse_resources(resources_param)
 
     # Parse limit
-    limit = None
+    limit: int | None = None
     if "limit" in flask.request.args:
         limit_str = flask.request.args.get("limit")
         # Validate limit format (positive integer)
         if not limit_str or not limit_str.isdigit() or int(limit_str) < 1:
             raise errors.BadRequest(
-                "Invalid query string parameters: "
-                "Failed validating 'pattern' for limit"
+                "Invalid query string parameters: Failed validating 'pattern' for limit"
             )
         limit = int(limit_str)
 
@@ -360,21 +362,18 @@ def list_allocation_candidates():
             providers = providers[:limit]
 
         # Build response based on microversion
+        allocation_requests: list[dict[str, Any]]
         if mv.is_at_least(12):
-            allocation_requests = _build_allocation_requests_dict(
-                providers, resources
-            )
+            allocation_requests = _build_allocation_requests_dict(providers, resources)
         else:
-            allocation_requests = _build_allocation_requests_list(
-                providers, resources
-            )
+            allocation_requests = _build_allocation_requests_list(providers, resources)
 
         provider_uuids = [p["uuid"] for p in providers]
         provider_summaries = _build_provider_summaries(
             session, provider_uuids, resources, mv
         )
 
-    response_data = {
+    response_data: dict[str, Any] = {
         "allocation_requests": allocation_requests,
         "provider_summaries": provider_summaries,
     }

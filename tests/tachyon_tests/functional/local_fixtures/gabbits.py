@@ -107,8 +107,7 @@ class LazyWSGIApp:
         if APP is None:
             # This shouldn't happen during normal test execution
             raise RuntimeError(
-                "LazyWSGIApp called but APP is None. "
-                "Fixture may not have run."
+                "LazyWSGIApp called but APP is None. Fixture may not have run."
             )
         return APP(environ, start_response)
 
@@ -157,19 +156,19 @@ class APIFixture(gabbi_fixture.GabbiFixture):
         self.db_fixture.setUp()
 
         # Set up environment variables for test data
-        os.environ['RP_UUID'] = str(uuid.uuid4())
-        os.environ['RP_NAME'] = "rp-%s" % uuid.uuid4().hex[:8]
-        os.environ['RP_UUID1'] = str(uuid.uuid4())
-        os.environ['RP_NAME1'] = "rp1-%s" % uuid.uuid4().hex[:8]
-        os.environ['RP_UUID2'] = str(uuid.uuid4())
-        os.environ['RP_NAME2'] = "rp2-%s" % uuid.uuid4().hex[:8]
-        os.environ['PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
-        os.environ['ALT_PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
-        os.environ['CONSUMER_UUID'] = str(uuid.uuid4())
-        os.environ['CONSUMER_UUID1'] = str(uuid.uuid4())
-        os.environ['PROJECT_ID'] = str(uuid.uuid4())
-        os.environ['USER_ID'] = str(uuid.uuid4())
-        os.environ['CUSTOM_RES_CLASS'] = 'CUSTOM_IRON_NFV'
+        os.environ["RP_UUID"] = str(uuid.uuid4())
+        os.environ["RP_NAME"] = "rp-%s" % uuid.uuid4().hex[:8]
+        os.environ["RP_UUID1"] = str(uuid.uuid4())
+        os.environ["RP_NAME1"] = "rp1-%s" % uuid.uuid4().hex[:8]
+        os.environ["RP_UUID2"] = str(uuid.uuid4())
+        os.environ["RP_NAME2"] = "rp2-%s" % uuid.uuid4().hex[:8]
+        os.environ["PARENT_PROVIDER_UUID"] = str(uuid.uuid4())
+        os.environ["ALT_PARENT_PROVIDER_UUID"] = str(uuid.uuid4())
+        os.environ["CONSUMER_UUID"] = str(uuid.uuid4())
+        os.environ["CONSUMER_UUID1"] = str(uuid.uuid4())
+        os.environ["PROJECT_ID"] = str(uuid.uuid4())
+        os.environ["USER_ID"] = str(uuid.uuid4())
+        os.environ["CUSTOM_RES_CLASS"] = "CUSTOM_IRON_NFV"
 
         # Create Flask app with proper Neo4j config and cache it
         flask_config = {

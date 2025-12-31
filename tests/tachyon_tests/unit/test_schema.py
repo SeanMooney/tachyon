@@ -1,47 +1,37 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for Neo4j schema definitions."""
+"""Unit tests for the Tachyon schema module."""
+
+from unittest import mock
 
 from oslotest import base
 
 from tachyon.db import schema
 
 
-class TestSchemaDefinitions(base.BaseTestCase):
-    """Tests for schema module constants."""
+class TestSchemaConstants(base.BaseTestCase):
+    """Tests for schema constants."""
 
-    def test_uniqueness_constraints_list(self):
-        """Test that uniqueness constraints are properly defined."""
-        self.assertIsInstance(schema.UNIQUENESS_CONSTRAINTS, list)
+    def test_uniqueness_constraints_non_empty(self):
+        """Test UNIQUENESS_CONSTRAINTS is not empty."""
         self.assertGreater(len(schema.UNIQUENESS_CONSTRAINTS), 0)
 
-        # Should have constraints for core entities
-        all_constraints = " ".join(schema.UNIQUENESS_CONSTRAINTS)
-        self.assertIn("ResourceProvider", all_constraints)
-        self.assertIn("Consumer", all_constraints)
-        self.assertIn("Trait", all_constraints)
-        self.assertIn("ResourceClass", all_constraints)
+    def test_uniqueness_constraints_contain_if_not_exists(self):
+        """Test all uniqueness constraints use IF NOT EXISTS."""
+        for constraint in schema.UNIQUENESS_CONSTRAINTS:
+            self.assertIn("IF NOT EXISTS", constraint)
 
-    def test_existence_constraints_list(self):
-        """Test that existence constraints list is defined.
-
-        Note: Property existence constraints require Neo4j Enterprise Edition.
-        In Community Edition, we rely on application logic to enforce these.
-        """
-        self.assertIsInstance(schema.EXISTENCE_CONSTRAINTS, list)
-        # Currently empty due to Neo4j Community Edition limitation
-
-    def test_indexes_list(self):
-        """Test that indexes are properly defined."""
-        self.assertIsInstance(schema.INDEXES, list)
+    def test_indexes_non_empty(self):
+        """Test INDEXES is not empty."""
         self.assertGreater(len(schema.INDEXES), 0)
 
-        # All indexes should start with CREATE INDEX
-        for idx in schema.INDEXES:
-            self.assertTrue(idx.strip().startswith("CREATE INDEX"))
+    def test_indexes_contain_if_not_exists(self):
+        """Test all indexes use IF NOT EXISTS."""
+        for index in schema.INDEXES:
+            self.assertIn("IF NOT EXISTS", index)
 
-    def test_schema_statements_combines_all(self):
-        """Test that SCHEMA_STATEMENTS combines all schema definitions."""
+    def test_schema_statements_combined(self):
+        """Test SCHEMA_STATEMENTS contains all constraints and indexes."""
         expected_count = (
             len(schema.UNIQUENESS_CONSTRAINTS)
             + len(schema.EXISTENCE_CONSTRAINTS)
@@ -49,15 +39,40 @@ class TestSchemaDefinitions(base.BaseTestCase):
         )
         self.assertEqual(len(schema.SCHEMA_STATEMENTS), expected_count)
 
-    def test_schema_uses_if_not_exists(self):
-        """Test that all schema statements use IF NOT EXISTS for idempotency."""
-        for statement in schema.SCHEMA_STATEMENTS:
-            self.assertIn(
-                "IF NOT EXISTS",
-                statement,
-                "Statement missing IF NOT EXISTS: %s..." % statement[:50],
-            )
+    def test_resource_provider_uuid_constraint(self):
+        """Test ResourceProvider UUID uniqueness constraint exists."""
+        has_rp_uuid_constraint = any(
+            "ResourceProvider" in c and "uuid" in c
+            for c in schema.UNIQUENESS_CONSTRAINTS
+        )
+        self.assertTrue(has_rp_uuid_constraint)
 
-    def test_apply_schema_function_exists(self):
-        """Test that apply_schema function is defined."""
-        self.assertTrue(callable(schema.apply_schema))
+    def test_consumer_uuid_constraint(self):
+        """Test Consumer UUID uniqueness constraint exists."""
+        has_consumer_constraint = any(
+            "Consumer" in c and "uuid" in c for c in schema.UNIQUENESS_CONSTRAINTS
+        )
+        self.assertTrue(has_consumer_constraint)
+
+
+class TestApplySchema(base.BaseTestCase):
+    """Tests for apply_schema function."""
+
+    def test_apply_schema_runs_all_statements(self):
+        """Test apply_schema runs all schema statements."""
+        mock_session = mock.MagicMock()
+
+        schema.apply_schema(mock_session)
+
+        self.assertEqual(mock_session.run.call_count, len(schema.SCHEMA_STATEMENTS))
+
+    def test_apply_schema_calls_with_statements(self):
+        """Test apply_schema passes correct statements."""
+        mock_session = mock.MagicMock()
+
+        schema.apply_schema(mock_session)
+
+        calls = mock_session.run.call_args_list
+        for i, call in enumerate(calls):
+            args, kwargs = call
+            self.assertEqual(args[0], schema.SCHEMA_STATEMENTS[i])

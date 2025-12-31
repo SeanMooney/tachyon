@@ -8,30 +8,34 @@ Implements the Placement-compatible root endpoint for version discovery.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import flask
+from oslo_log import log
 
 from tachyon.api import microversion
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("root", __name__)
 
 # Placement API version range
-MIN_VERSION = "1.0"
-MAX_VERSION = "1.39"
+MIN_VERSION: str = "1.0"
+MAX_VERSION: str = "1.39"
 
 
-def _mv():
+def _mv() -> microversion.Microversion:
     """Return the parsed microversion from the request context.
 
     :returns: Microversion instance
     """
-    mv = getattr(flask.g, "microversion", None)
+    mv: microversion.Microversion | None = getattr(flask.g, "microversion", None)
     if mv is None:
         return microversion.Microversion(1, 0)
     return mv
 
 
-def _httpdate(dt=None):
+def _httpdate(dt: datetime.datetime | None = None) -> str:
     """Return an HTTP-date string.
 
     :param dt: Optional datetime, defaults to now
@@ -42,7 +46,7 @@ def _httpdate(dt=None):
 
 
 @bp.route("/", methods=["GET"])
-def home():
+def home() -> tuple[flask.Response, int]:
     """Return version discovery information.
 
     Returns API version information following the OpenStack API guidelines
@@ -52,7 +56,7 @@ def home():
     """
     mv = _mv()
 
-    version_data = {
+    version_data: dict[str, Any] = {
         "id": "v%s" % MIN_VERSION,
         "max_version": MAX_VERSION,
         "min_version": MIN_VERSION,

@@ -4,29 +4,35 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import flask
+from oslo_log import log
 
-from tachyon.api import errors
-from tachyon.api import middleware
-from tachyon.api.blueprints import aggregates
-from tachyon.api.blueprints import allocation_candidates
-from tachyon.api.blueprints import allocations
-from tachyon.api.blueprints import inventories
-from tachyon.api.blueprints import resource_classes
-from tachyon.api.blueprints import resource_providers
-from tachyon.api.blueprints import root
-from tachyon.api.blueprints import traits
-from tachyon.api.blueprints import usages
-from tachyon.db import neo4j_api
-from tachyon.db import schema
+from tachyon.api import errors, middleware
+from tachyon.api.blueprints import (
+    aggregates,
+    allocation_candidates,
+    allocations,
+    inventories,
+    resource_classes,
+    resource_providers,
+    root,
+    traits,
+    usages,
+)
+from tachyon.db import neo4j_api, schema
+
+LOG = log.getLogger(__name__)
 
 
-def create_app(config=None):
+def create_app(config: dict[str, Any] | None = None) -> flask.Flask:
     """Create and configure the Flask application.
 
     :param config: Optional configuration dictionary to override defaults
     :returns: Configured Flask application instance
     """
+    LOG.debug("Creating Flask application")
     app = flask.Flask(__name__)
 
     # Defaults
@@ -40,6 +46,7 @@ def create_app(config=None):
 
     if config:
         app.config.update(config)
+        LOG.debug("Applied custom configuration")
 
     # Register middleware and errors
     middleware.register(app)
@@ -61,14 +68,16 @@ def create_app(config=None):
     app.register_blueprint(allocations.bp)
     app.register_blueprint(usages.bp)
 
+    LOG.info("Flask application created successfully")
     return app
 
 
-def _init_neo4j(app):
+def _init_neo4j(app: flask.Flask) -> None:
     """Initialize Neo4j driver and apply schema.
 
     :param app: Flask application instance
     """
+    LOG.debug("Initializing Neo4j driver with URI %s", app.config["NEO4J_URI"])
     driver = neo4j_api.init_driver(
         app.config["NEO4J_URI"],
         app.config.get("NEO4J_USERNAME"),
@@ -77,11 +86,13 @@ def _init_neo4j(app):
     app.extensions["neo4j_driver"] = driver
 
     if app.config.get("AUTO_APPLY_SCHEMA", True):
+        LOG.debug("Applying database schema")
         with driver.session() as session:
             schema.apply_schema(session)
+    LOG.info("Neo4j driver initialized")
 
 
-def get_driver():
+def get_driver() -> neo4j_api.Neo4jClient:
     """Get the Neo4j driver, initializing lazily if needed.
 
     This supports the functional test pattern where the app is created
@@ -91,5 +102,9 @@ def get_driver():
     :returns: Neo4j driver instance
     """
     if "neo4j_driver" not in flask.current_app.extensions:
-        _init_neo4j(flask.current_app._get_current_object())
-    return flask.current_app.extensions["neo4j_driver"]
+        LOG.debug("Lazy-initializing Neo4j driver")
+        # Get the actual Flask app object from the proxy
+        app: flask.Flask = flask.current_app._get_current_object()
+        _init_neo4j(app)
+    driver: neo4j_api.Neo4jClient = flask.current_app.extensions["neo4j_driver"]
+    return driver
