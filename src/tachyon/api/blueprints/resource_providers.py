@@ -131,6 +131,38 @@ def _parse_resources(value: str) -> list[tuple[str, int]]:
     return resources
 
 
+def _parse_member_of(value: str) -> list[str]:
+    """Parse member_of query parameter.
+
+    Formats supported:
+        - Single UUID: <uuid>
+        - With 'in:' prefix: in:<uuid1>,<uuid2>,...
+
+    Returns:
+        List of aggregate UUIDs.
+    """
+    if value.startswith("in:"):
+        uuid_str = value[3:]
+    else:
+        uuid_str = value
+
+    aggregates = []
+    for agg in uuid_str.split(","):
+        agg = agg.strip()
+        if not agg:
+            continue
+        try:
+            normalized = str(uuidlib.UUID(agg))
+            aggregates.append(normalized)
+        except Exception:
+            raise BadRequest(
+                "Invalid query string parameters: Expected 'member_of' parameter "
+                "to contain valid UUID(s)."
+            )
+
+    return aggregates
+
+
 def _missing_traits(session, traits: list[str]) -> list[str]:
     if not traits:
         return []
@@ -164,6 +196,26 @@ def _provider_traits_match(
     if any(forb in traits for forb in forbidden):
         return False
     return True
+
+
+def _provider_in_aggregates(
+    session, rp_uuid: str, aggregate_uuids: list[str]
+) -> bool:
+    """Check if provider is a member of any of the specified aggregates."""
+    if not aggregate_uuids:
+        return True
+
+    res = session.run(
+        """
+        MATCH (rp:ResourceProvider {uuid: $uuid})-[:MEMBER_OF]->(agg:Aggregate)
+        WHERE agg.uuid IN $aggregates
+        RETURN count(agg) AS cnt
+        """,
+        uuid=rp_uuid,
+        aggregates=aggregate_uuids,
+    ).single()
+
+    return res and res["cnt"] > 0
 
 
 def _provider_has_capacity(
@@ -246,8 +298,13 @@ def list_resource_providers() -> tuple[Response, int]:
     name = request.args.get("name")
     uuid_filter = request.args.get("uuid")
     in_tree = request.args.get("in_tree")
+    member_of_param = request.args.get("member_of")
     required_param = request.args.get("required")
     resources_param = request.args.get("resources")
+
+    # member_of requires microversion >= 1.3
+    if member_of_param is not None and not mv.is_at_least(3):
+        raise BadRequest("Invalid query string parameters")
 
     if uuid_filter:
         try:
@@ -266,6 +323,11 @@ def list_resource_providers() -> tuple[Response, int]:
         required_traits, forbidden_traits = _parse_required(required_param, mv)
 
     required_resources = _parse_resources(resources_param) if resources_param else []
+
+    # Parse member_of parameter
+    member_of_aggregates: list[str] = []
+    if member_of_param:
+        member_of_aggregates = _parse_member_of(member_of_param)
 
     with _driver().session() as session:
         if required_traits:
@@ -326,6 +388,11 @@ def list_resource_providers() -> tuple[Response, int]:
 
             if required_resources:
                 if not _provider_has_capacity(session, rp_uuid, required_resources):
+                    continue
+
+            # Check member_of filter
+            if member_of_aggregates:
+                if not _provider_in_aggregates(session, rp_uuid, member_of_aggregates):
                     continue
 
             providers.append(

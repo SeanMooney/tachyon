@@ -4,10 +4,13 @@ from flask import Flask, current_app
 
 from tachyon.api import errors, middleware
 from tachyon.api.blueprints import (
+    aggregates,
+    allocation_candidates,
     allocations,
     inventories,
     resource_classes,
     resource_providers,
+    root,
     traits,
     usages,
 )
@@ -40,8 +43,11 @@ def create_app(config: dict | None = None) -> Flask:
         _init_neo4j(app)
 
     # Register blueprints
+    app.register_blueprint(root.bp)
     app.register_blueprint(resource_providers.bp)
     app.register_blueprint(inventories.bp)
+    app.register_blueprint(aggregates.bp)
+    app.register_blueprint(allocation_candidates.bp)
     app.register_blueprint(traits.bp)
     app.register_blueprint(traits.provider_traits_bp)
     app.register_blueprint(resource_classes.bp)

@@ -1,0 +1,48 @@
+# Tests to build microversion functionality behavior and confirm
+# it is present and behaving as expected.
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        accept: application/json
+        x-auth-token: admin
+
+tests:
+- name: root has microversion header
+  GET: /
+  response_headers:
+      vary: OpenStack-API-Version
+      openstack-api-version: /^placement \d+\.\d+$/
+
+- name: root has microversion info
+  GET: /
+  response_json_paths:
+      $.versions[0].max_version: /^\d+\.\d+$/
+      $.versions[0].min_version: /^\d+\.\d+$/
+      $.versions[0].id: v1.0
+      $.versions[0].status: CURRENT
+
+- name: latest microversion is 1.39
+  GET: /
+  request_headers:
+      openstack-api-version: placement latest
+  response_headers:
+      vary: OpenStack-API-Version
+      openstack-api-version: placement 1.39
+
+- name: request with specific version
+  GET: /
+  request_headers:
+      openstack-api-version: placement 1.15
+  response_headers:
+      openstack-api-version: placement 1.15
+
+- name: resource providers list has microversion header
+  GET: /resource_providers
+  request_headers:
+      openstack-api-version: placement 1.10
+  response_headers:
+      vary: OpenStack-API-Version
+      openstack-api-version: placement 1.10

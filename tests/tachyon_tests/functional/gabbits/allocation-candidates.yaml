@@ -1,0 +1,199 @@
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        openstack-api-version: placement 1.10
+
+tests:
+
+- name: get allocation candidates before microversion
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.8
+  status: 404
+
+- name: get allocation candidates empty resources
+  GET: /allocation_candidates?resources=
+  status: 400
+  response_strings:
+      - Badly formed resources parameter. Expected resources query string parameter in form
+      - 'Got: empty string.'
+
+- name: get allocation candidates no resources
+  GET: /allocation_candidates
+  status: 400
+  response_strings:
+      - "'resources' is a required property"
+
+- name: get bad resource class
+  GET: /allocation_candidates?resources=MCPU:99
+  status: 400
+  response_strings:
+      - Invalid resource class in resources parameter
+
+- name: get bad limit microversion
+  GET: /allocation_candidates?resources=VCPU:1&limit=5
+  request_headers:
+      openstack-api-version: placement 1.15
+  status: 400
+  response_strings:
+      - Invalid query string parameters
+      - "'limit' was unexpected"
+
+- name: get bad limit type
+  GET: /allocation_candidates?resources=VCPU:1&limit=cow
+  request_headers:
+      openstack-api-version: placement 1.16
+  status: 400
+  response_strings:
+      - Invalid query string parameters
+      - "Failed validating 'pattern'"
+
+- name: get bad limit value negative
+  GET: /allocation_candidates?resources=VCPU:1&limit=-99
+  request_headers:
+      openstack-api-version: placement 1.16
+  status: 400
+  response_strings:
+      - Invalid query string parameters
+      - "Failed validating 'pattern'"
+
+- name: get bad limit value zero
+  GET: /allocation_candidates?resources=VCPU:1&limit=0
+  request_headers:
+      openstack-api-version: placement 1.16
+  status: 400
+  response_strings:
+      - Invalid query string parameters
+      - "Failed validating 'pattern'"
+
+# Create a provider with inventory for testing successful queries
+- name: create compute provider
+  POST: /resource_providers
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: add inventory to compute provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      resource_provider_generation: 0
+      inventories:
+        VCPU:
+          total: 24
+          allocation_ratio: 16.0
+        MEMORY_MB:
+          total: 131072
+          allocation_ratio: 1.5
+        DISK_GB:
+          total: 2000
+          reserved: 100
+  status: 200
+
+- name: get allocation candidates no results
+  GET: /allocation_candidates?resources=VCPU:1000
+  status: 200
+  response_json_paths:
+      $.allocation_requests: []
+      $.provider_summaries: {}
+
+- name: get allocation candidates with results list format
+  GET: /allocation_candidates?resources=VCPU:1
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations[0].resource_provider.uuid: $ENVIRON['RP_UUID']
+      $.allocation_requests[0].allocations[0].resources.VCPU: 1
+  response_forbidden_headers:
+      - cache-control
+      - last-modified
+
+- name: get allocation candidates dict format 1.12
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.12
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+
+- name: get allocation candidates with cache headers 1.15
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.15
+  status: 200
+  response_headers:
+      cache-control: no-cache
+      last-modified: /^\w+, \d+ \w+ \d{4} [\d:]+ GMT$/
+
+- name: get allocation candidates with limit
+  GET: /allocation_candidates?resources=VCPU:1&limit=1
+  request_headers:
+      openstack-api-version: placement 1.16
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+
+- name: get allocation candidates provider summaries
+  GET: /allocation_candidates?resources=VCPU:1,MEMORY_MB:1024
+  request_headers:
+      openstack-api-version: placement 1.12
+  status: 200
+  response_json_paths:
+      $.provider_summaries["$ENVIRON['RP_UUID']"].resources.VCPU.capacity: 384
+      $.provider_summaries["$ENVIRON['RP_UUID']"].resources.VCPU.used: 0
+      $.provider_summaries["$ENVIRON['RP_UUID']"].resources.MEMORY_MB.capacity: 196608
+      $.provider_summaries["$ENVIRON['RP_UUID']"].resources.MEMORY_MB.used: 0
+
+# Create another provider to test multiple candidates
+- name: create second compute provider
+  POST: /resource_providers
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      name: $ENVIRON['RP_NAME1']
+      uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: add inventory to second compute provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      resource_provider_generation: 0
+      inventories:
+        VCPU:
+          total: 16
+        MEMORY_MB:
+          total: 65536
+  status: 200
+
+- name: get allocation candidates multiple providers
+  GET: /allocation_candidates?resources=VCPU:1,MEMORY_MB:1024
+  request_headers:
+      openstack-api-version: placement 1.12
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+      $.provider_summaries.`len`: 2
+
+- name: get allocation candidates with limit 1
+  GET: /allocation_candidates?resources=VCPU:1,MEMORY_MB:1024&limit=1
+  request_headers:
+      openstack-api-version: placement 1.16
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+
