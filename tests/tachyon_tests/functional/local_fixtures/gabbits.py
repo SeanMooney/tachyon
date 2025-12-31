@@ -4,24 +4,38 @@ This module provides fixtures for running Gabbi YAML tests against
 the Tachyon Flask application with a real Neo4j database (via testcontainers
 or an external instance).
 
-Pattern follows placement's test harness - a global CONF/APP that the fixture
-controls, and setup_app() returns the cached application.
+Each test file gets its own Flask development server running in a separate
+thread on a dynamically allocated port, providing complete isolation for
+concurrent test execution.
 """
 
 import os
+import socket
+import threading
 import uuid
 
 import fixtures
 from gabbi import fixture as gabbi_fixture
 from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.neo4j import Neo4jContainer
+from werkzeug.serving import make_server
 
 from tachyon.api import create_app
 
-# Global app for the current test file.
-# Set by APIFixture.start_fixture(), cleared by stop_fixture().
-# We cache the APP because wsgi-intercept expects a consistent WSGI app.
-APP = None
+
+def get_free_port():
+    """Find and return a free port on localhost.
+
+    Uses the OS to allocate a free port by binding to port 0.
+    The socket is closed immediately, making the port available.
+
+    Returns:
+        int: A free port number.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
 class TachyonNeo4jContainer(Neo4jContainer):
@@ -92,54 +106,17 @@ class Neo4jFixture(fixtures.Fixture):
             self.container = None
 
 
-class LazyWSGIApp:
-    """A lazy WSGI wrapper that defers to the global APP.
-
-    This is needed because gabbi creates HTTP clients during test discovery
-    (before fixtures run), but we need requests to use the app created by
-    the fixture. This wrapper defers the actual app lookup to request time.
-    """
-
-    def __call__(self, environ, start_response):
-        """WSGI callable that delegates to the current global APP."""
-        if APP is None:
-            # This shouldn't happen during normal test execution
-            raise RuntimeError(
-                "LazyWSGIApp called but APP is None. "
-                "Fixture may not have run."
-            )
-        return APP(environ, start_response)
-
-
-# Single lazy app instance used by all tests
-_lazy_app = LazyWSGIApp()
-
-
-def setup_app():
-    """WSGI application factory for Gabbi.
-
-    Called by Gabbi via wsgi-intercept to get the Flask WSGI application.
-    Returns a lazy wrapper that defers to the global APP set by the fixture.
-
-    This allows tests to be discovered before fixtures run, while still
-    using the correct app configuration during execution.
-
-    Returns:
-        WSGI application callable.
-    """
-    return _lazy_app
-
-
 class APIFixture(gabbi_fixture.GabbiFixture):
     """Gabbi fixture for API tests.
 
     Sets up:
     - Neo4j database (testcontainer or external)
-    - Flask app configuration
+    - Flask development server in a separate thread
     - Environment variables for test data (UUIDs, names)
 
-    Each YAML file gets its own database container for complete isolation.
-    The fixture creates and caches the Flask app with proper Neo4j config.
+    Each YAML file gets its own database container and Flask server
+    for complete isolation. The port is allocated dynamically at fixture
+    time and stored in TACHYON_TEST_PORT environment variable.
 
     Used by declaring in YAML test files:
         fixtures:
@@ -148,11 +125,16 @@ class APIFixture(gabbi_fixture.GabbiFixture):
 
     def start_fixture(self):
         """Called once before any tests in a YAML file run."""
-        global APP
-
         # Set up database - each YAML file gets its own container
         self.db_fixture = Neo4jFixture()
         self.db_fixture.setUp()
+
+        # Allocate a free port for this fixture (runs in worker process)
+        self.port = get_free_port()
+
+        # Set environment variable so tests can discover the port
+        # The monkey-patch in test_api.py reads this at request time
+        os.environ['TACHYON_TEST_PORT'] = str(self.port)
 
         # Set up environment variables for test data
         os.environ['RP_UUID'] = str(uuid.uuid4())
@@ -169,7 +151,7 @@ class APIFixture(gabbi_fixture.GabbiFixture):
         os.environ['USER_ID'] = str(uuid.uuid4())
         os.environ['CUSTOM_RES_CLASS'] = 'CUSTOM_IRON_NFV'
 
-        # Create Flask app with proper Neo4j config and cache it
+        # Create Flask app with proper Neo4j config
         flask_config = {
             "TESTING": True,
             "AUTH_STRATEGY": "noauth2",
@@ -178,19 +160,42 @@ class APIFixture(gabbi_fixture.GabbiFixture):
             "NEO4J_USERNAME": self.db_fixture.username,
             "NEO4J_PASSWORD": self.db_fixture.password,
         }
-        APP = create_app(flask_config)
+        self.app = create_app(flask_config)
+
+        # Start Flask development server in a separate thread on the allocated port
+        self.server = make_server(
+            '127.0.0.1',
+            self.port,
+            self.app,
+            threaded=True,
+        )
+        self.server_thread = threading.Thread(
+            target=self.server.serve_forever,
+            daemon=True,
+        )
+        self.server_thread.start()
 
     def stop_fixture(self):
         """Called after all tests in a YAML file complete."""
-        global APP
+        # Shutdown the Flask server
+        if hasattr(self, 'server') and self.server:
+            self.server.shutdown()
+
+        # Wait for server thread to finish
+        if hasattr(self, 'server_thread') and self.server_thread:
+            self.server_thread.join(timeout=5)
 
         # Close Neo4j driver if initialized
-        if APP is not None and "neo4j_driver" in APP.extensions:
+        if hasattr(self, 'app') and self.app and "neo4j_driver" in self.app.extensions:
             try:
-                APP.extensions["neo4j_driver"].close()
+                self.app.extensions["neo4j_driver"].close()
             except Exception:
                 pass
 
         # Clean up database fixture
-        self.db_fixture.cleanUp()
-        APP = None
+        if hasattr(self, 'db_fixture'):
+            self.db_fixture.cleanUp()
+
+        # Clean up port environment variable
+        if 'TACHYON_TEST_PORT' in os.environ:
+            del os.environ['TACHYON_TEST_PORT']

@@ -1,7 +1,7 @@
 ---
 title: Gabbi Tests
 description: Placement API compatibility testing using Gabbi YAML tests
-keywords: [gabbi, yaml, api-testing, placement, compatibility, wsgi-intercept, flask]
+keywords: [gabbi, yaml, api-testing, placement, compatibility, flask, werkzeug]
 related:
   - 08-testing/README.md
   - 08-testing/fixtures.md
@@ -15,14 +15,14 @@ section: testing
 
 Tachyon uses [Gabbi](https://gabbi.readthedocs.io/) for declarative HTTP API testing, reusing Placement's test suite to verify API compatibility.
 
-> **Note**: Gabbi integrates with Tachyon's Flask application via wsgi-intercept. For Flask application details, see [Technology Stack](../00-overview/technology-stack.md#rest-api-framework-flask).
+> **Note**: Gabbi makes real HTTP requests to a Flask development server running in a separate thread. For Flask application details, see [Technology Stack](../00-overview/technology-stack.md#rest-api-framework-flask).
 
 ## Why Gabbi?
 
 1. **Declarative YAML**: Tests are readable, maintainable specifications
 2. **Placement Compatibility**: Reuse existing Placement tests with minimal changes
 3. **OpenStack Standard**: Used by Placement, Gnocchi, and other projects
-4. **In-Process Testing**: Uses wsgi-intercept for fast, isolated tests
+4. **Real HTTP Testing**: Tests go through the actual HTTP stack for realistic behavior
 
 ## Architecture
 
@@ -39,80 +39,94 @@ Tachyon uses [Gabbi](https://gabbi.readthedocs.io/) for declarative HTTP API tes
 │  - gabbi.driver.build_tests()                               │
 │  - Discovers YAML files in gabbits/                         │
 │  - Creates Python test cases                                │
-│  - intercept=setup_app → Flask app via wsgi-intercept       │
+│  - host='127.0.0.1', port=TEST_PORT → Flask server          │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
 │  APIFixture (local_fixtures/gabbits.py)                     │
-│  - Sets up config, database, policy                         │
+│  - Starts Neo4j container (testcontainers)                  │
+│  - Creates Flask app with Neo4j config                      │
+│  - Starts Flask server in separate thread                   │
 │  - Populates os.environ with test UUIDs                     │
-│  - Provides setup_app() returning Flask app                 │
 └─────────────────────────┬───────────────────────────────────┘
                           │
              ┌────────────┴────────────┐
              │                         │
       ┌──────▼──────┐          ┌───────▼────────────────────┐
-      │ Neo4j       │          │ wsgi-intercept             │
+      │ Neo4j       │          │ Flask Dev Server (Thread)  │
       │ Container   │          │ ┌─────────────────────────┐│
       │ (testcon-   │          │ │  Flask Application      ││
       │  tainers)   │          │ │  create_app(TESTING=T)  ││
       └─────────────┘          │ │  - Blueprints (routes)  ││
                                │ │  - Middleware           ││
                                │ └─────────────────────────┘│
-                               │ Intercepts HTTP → WSGI     │
+                               │ werkzeug.serving.make_server│
+                               │ Listens on 127.0.0.1:PORT   │
                                └────────────────────────────┘
 ```
 
-### How wsgi-intercept Works
+### How the Threaded Server Works
 
-wsgi-intercept intercepts HTTP calls at the socket level and routes them directly to the WSGI application in-process:
+Each test file gets its own Flask development server running in a separate thread:
 
 ```
-HTTP Request (Gabbi)
+Test Discovery (module load)
         │
         ▼
 ┌───────────────────┐
-│ wsgi-intercept    │
-│ Patches httplib   │
-│ HTTPConnection    │
+│ get_free_port()   │
+│ Allocate TEST_PORT│
 └───────┬───────────┘
-        │ No network I/O
+        │
         ▼
 ┌───────────────────┐
-│ Flask WSGI App    │
-│ create_app()      │
+│ build_tests()     │
+│ host='127.0.0.1'  │
+│ port=TEST_PORT    │
+└───────┬───────────┘
+        │
+Test Execution (fixture runs)
+        │
+        ▼
+┌───────────────────┐
+│ APIFixture        │
+│ .start_fixture()  │
+│ - Start Neo4j     │
+│ - Create Flask app│
+│ - Start server    │
+│   in thread       │
+└───────┬───────────┘
+        │
+        ▼
+┌───────────────────┐
+│ HTTP Requests     │
+│ (Gabbi tests)     │
+│ → 127.0.0.1:PORT  │
 └───────────────────┘
 ```
 
 This provides:
-- **Speed**: No network overhead, tests run faster
-- **Isolation**: No port conflicts, multiple test processes can run in parallel
-- **Simplicity**: No server process to manage
+- **Isolation**: Each stestr worker process gets its own port
+- **Realistic Testing**: Tests go through actual HTTP stack
+- **Concurrent Safety**: No shared global state between test files
+- **Simplicity**: No interception or monkey-patching required
 
 ## Test Loader
 
 **File**: `tests/tachyon_tests/functional/test_api.py`
 
 ```python
-"""Gabbi test loader for Tachyon API tests.
-
-This module integrates Gabbi with Flask via wsgi-intercept, enabling
-declarative YAML-based API testing without network overhead.
-"""
+"""Gabbi test loader for Tachyon API."""
 
 import os
 
 from gabbi import driver
 from oslotest import output
-import wsgi_intercept
 
 from tachyon_tests.functional.local_fixtures import gabbits as fixtures
 from tachyon_tests.local_fixtures import logging as capture
 
-# Enforce native str for response headers (required for compatibility)
-wsgi_intercept.STRICT_RESPONSE_HEADERS = True
-
-TESTS_DIR = 'gabbits'
+TESTS_DIR = "gabbits"
 
 
 def load_tests(loader, tests, pattern):
@@ -121,9 +135,9 @@ def load_tests(loader, tests, pattern):
     This is the standard Python unittest load_tests protocol.
     Called by test runners (stestr, unittest discover).
 
-    The key integration point is the `intercept` parameter, which
-    receives a factory function that returns the Flask WSGI application.
-    Gabbi uses wsgi-intercept to route HTTP requests to this app.
+    Tests are directed to a Flask server running on 127.0.0.1:TEST_PORT.
+    The TEST_PORT is allocated at module import time, ensuring each
+    stestr worker process gets its own unique port.
 
     Args:
         loader: unittest.TestLoader instance
@@ -135,48 +149,54 @@ def load_tests(loader, tests, pattern):
     """
     test_dir = os.path.join(os.path.dirname(__file__), TESTS_DIR)
 
-    # Per-test fixtures (applied to each individual test)
     inner_fixtures = [
         output.CaptureOutput,
         capture.Logging,
     ]
 
     return driver.build_tests(
-        test_dir,                          # Directory with YAML files
-        loader,                            # unittest.TestLoader
-        host=None,                         # No real host (wsgi-intercept handles routing)
-        test_loader_name=__name__,         # Module name for test naming
-        intercept=fixtures.setup_app,      # Flask app factory (returns WSGI callable)
-        inner_fixtures=inner_fixtures,     # Per-test fixtures
-        fixture_module=fixtures            # Module with GabbiFixture classes
+        test_dir,
+        loader,
+        host='127.0.0.1',
+        port=fixtures.TEST_PORT,
+        test_loader_name=__name__,
+        inner_fixtures=inner_fixtures,
+        fixture_module=fixtures,
     )
 ```
 
-### Flask Integration via setup_app
+### Flask Server Integration via APIFixture
 
-The `intercept` parameter receives a factory function that returns the Flask WSGI application:
+The `APIFixture` class manages the Flask server lifecycle:
 
 ```python
 # In local_fixtures/gabbits.py
-def setup_app():
-    """WSGI app factory for Gabbi.
+from werkzeug.serving import make_server
 
-    Called by Gabbi when a test needs to make an HTTP request.
-    wsgi-intercept routes the request to this Flask app.
+class APIFixture(gabbi_fixture.GabbiFixture):
+    def start_fixture(self):
+        """Start Neo4j and Flask server before tests run."""
+        # Start Neo4j container
+        self.db_fixture = Neo4jFixture()
+        self.db_fixture.setUp()
 
-    Returns:
-        Flask WSGI application callable
-    """
-    from tachyon.api import create_app
+        # Create Flask app with Neo4j config
+        self.app = create_app({
+            "TESTING": True,
+            "NEO4J_URI": self.db_fixture.uri,
+            # ...
+        })
 
-    flask_config = {
-        'TESTING': True,
-        'AUTH_STRATEGY': 'noauth2',
-        'NEO4J_URI': DB_FIXTURE.uri if DB_FIXTURE else None,
-    }
+        # Start Flask in a separate thread
+        self.server = make_server('127.0.0.1', TEST_PORT, self.app, threaded=True)
+        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.server_thread.start()
 
-    return create_app(flask_config)
-```
+    def stop_fixture(self):
+        """Shutdown server and cleanup after tests complete."""
+        self.server.shutdown()
+        self.server_thread.join(timeout=5)
+        self.db_fixture.cleanUp()
 ```
 
 ### Key Parameters
@@ -184,7 +204,8 @@ def setup_app():
 | Parameter | Purpose |
 |-----------|---------|
 | `test_dir` | Directory containing YAML files |
-| `intercept` | Function returning WSGI app (uses wsgi-intercept) |
+| `host` | Hostname of Flask server (127.0.0.1) |
+| `port` | Port of Flask server (dynamically allocated) |
 | `fixture_module` | Module containing `GabbiFixture` subclasses |
 | `inner_fixtures` | Applied to each individual test |
 | `test_loader_name` | Used to name generated test methods |
@@ -405,6 +426,15 @@ group_regex = "tachyon_tests\\.functional\\.test_api(?:\\.|_)([^_]+)"
 
 This captures the YAML filename, grouping tests from the same file.
 
+### Concurrent Safety
+
+The threaded server approach provides isolation for concurrent execution:
+
+- **Port Allocation**: Each stestr worker process allocates its own `TEST_PORT` at module import time
+- **No Global State**: Each fixture manages its own server instance
+- **Sequential Within File**: Tests in a YAML file share a server, running sequentially
+- **Parallel Across Files**: Different YAML files can run in separate processes
+
 ## Creating New Tests
 
 ### 1. Create YAML File
@@ -431,12 +461,12 @@ tests:
 
 ### 2. Add Required Environment Variables
 
-If tests need new UUIDs, update `APIFixture._setup_environ()`:
+If tests need new UUIDs, update `APIFixture.start_fixture()`:
 
 ```python
-def _setup_environ(self):
-    # ... existing ...
-    os.environ['MY_NEW_UUID'] = uuidutils.generate_uuid()
+def start_fixture(self):
+    # ... existing setup ...
+    os.environ['MY_NEW_UUID'] = str(uuid.uuid4())
 ```
 
 ### 3. Create Specialized Fixture (if needed)
@@ -452,8 +482,10 @@ class MyFeatureFixture(APIFixture):
         self._create_my_data()
 
     def _create_my_data(self):
-        # Create data in Neo4j
-        pass
+        # Create data in Neo4j via app context
+        with self.app.app_context():
+            # ... create data ...
+            pass
 ```
 
 ### 4. Reference in YAML
@@ -491,7 +523,7 @@ tox -e functional -- test_api.ResourceProviderGabbits.test_010_create_resource_p
 
 - [Gabbi Documentation](https://gabbi.readthedocs.io/)
 - [Placement Gabbi Tests](../../placement-gabbi-tests.md) - Comprehensive analysis
-- [wsgi-intercept](https://github.com/cdent/wsgi-intercept) - In-process WSGI testing
+- [Werkzeug Development Server](https://werkzeug.palletsprojects.com/en/latest/serving/) - Server used by Flask
 - [Placement gabbits/](../../ref/src/placement/placement/tests/functional/gabbits/) - Original test files
 - [Flask Testing](../../ref/src/flask/docs/testing.rst) - Flask test client documentation
 - [Technology Stack](../00-overview/technology-stack.md) - Flask application factory pattern
