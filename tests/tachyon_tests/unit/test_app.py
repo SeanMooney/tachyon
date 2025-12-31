@@ -6,15 +6,14 @@ from unittest import mock
 
 from oslotest import base
 
-from tachyon.api import app
-from tachyon.api import errors
+from tachyon.api import app, errors
 from tachyon.db import schema
 
 
 class TestCreateApp(base.BaseTestCase):
     """Tests for the create_app factory function."""
 
-    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    @mock.patch.object(app, "_init_neo4j", autospec=True)
     def test_create_app_defaults(self, mock_init_neo4j):
         """Test app creation with default configuration."""
         flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
@@ -23,20 +22,22 @@ class TestCreateApp(base.BaseTestCase):
         self.assertEqual(flask_app.config["MAX_LIMIT"], 1000)
         self.assertTrue(flask_app.config["TESTING"])
 
-    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    @mock.patch.object(app, "_init_neo4j", autospec=True)
     def test_create_app_custom_config(self, mock_init_neo4j):
         """Test app creation with custom configuration."""
-        flask_app = app.create_app({
-            "TESTING": True,
-            "SKIP_DB_INIT": True,
-            "AUTH_STRATEGY": "keystone",
-            "MAX_LIMIT": 500,
-        })
+        flask_app = app.create_app(
+            {
+                "TESTING": True,
+                "SKIP_DB_INIT": True,
+                "AUTH_STRATEGY": "keystone",
+                "MAX_LIMIT": 500,
+            }
+        )
 
         self.assertEqual(flask_app.config["AUTH_STRATEGY"], "keystone")
         self.assertEqual(flask_app.config["MAX_LIMIT"], 500)
 
-    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    @mock.patch.object(app, "_init_neo4j", autospec=True)
     def test_blueprints_registered(self, mock_init_neo4j):
         """Test that all blueprints are registered."""
         flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
@@ -98,7 +99,7 @@ class TestAPIErrors(base.BaseTestCase):
         self.assertEqual(error.status_code, 409)
         self.assertEqual(error.title, "Inventory In Use")
 
-    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    @mock.patch.object(app, "_init_neo4j", autospec=True)
     def test_error_to_response(self, mock_init_neo4j):
         """Test error serialization to response."""
         flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})
@@ -115,7 +116,7 @@ class TestAPIErrors(base.BaseTestCase):
             self.assertEqual(data["errors"][0]["title"], "Not Found")
             self.assertEqual(data["errors"][0]["detail"], "Resource xyz not found")
 
-    @mock.patch.object(app, '_init_neo4j', autospec=True)
+    @mock.patch.object(app, "_init_neo4j", autospec=True)
     def test_error_response_helper(self, mock_init_neo4j):
         """Test error_response helper function."""
         flask_app = app.create_app({"TESTING": True, "SKIP_DB_INIT": True})

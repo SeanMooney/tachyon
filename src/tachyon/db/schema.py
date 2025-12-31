@@ -7,8 +7,16 @@ Schema is applied via Cypher statements rather than migrations, following
 the design in design/05-operations/indexes-constraints.md.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
+
 # Uniqueness constraints (also create indexes automatically)
-UNIQUENESS_CONSTRAINTS = [
+UNIQUENESS_CONSTRAINTS: list[str] = [
     # Resource Provider
     "CREATE CONSTRAINT rp_uuid_unique IF NOT EXISTS "
     "FOR (rp:ResourceProvider) REQUIRE rp.uuid IS UNIQUE",
@@ -47,7 +55,7 @@ EXISTENCE_CONSTRAINTS: list[str] = [
 ]
 
 # Performance indexes (beyond those created by uniqueness constraints)
-INDEXES = [
+INDEXES: list[str] = [
     # Trait name index (for fast lookups)
     "CREATE INDEX trait_name_idx IF NOT EXISTS FOR (t:Trait) ON (t.name)",
     # Resource Class name index
@@ -59,17 +67,17 @@ INDEXES = [
 ]
 
 # All schema statements in order
-SCHEMA_STATEMENTS = UNIQUENESS_CONSTRAINTS + EXISTENCE_CONSTRAINTS + INDEXES
+SCHEMA_STATEMENTS: list[str] = UNIQUENESS_CONSTRAINTS + EXISTENCE_CONSTRAINTS + INDEXES
 
 
-def apply_schema(session) -> None:
+def apply_schema(session: Any) -> None:
     """Apply all schema constraints and indexes.
 
-    Args:
-        session: Neo4j session to execute statements against.
-
-    Note:
-        Uses IF NOT EXISTS to make this idempotent.
+    :param session: Neo4j session to execute statements against
+    :note: Uses IF NOT EXISTS to make this idempotent.
     """
+    LOG.debug("Applying %d schema statements", len(SCHEMA_STATEMENTS))
     for statement in SCHEMA_STATEMENTS:
+        LOG.debug("Executing schema statement: %s", statement[:60])
         session.run(statement)
+    LOG.info("Schema applied successfully")

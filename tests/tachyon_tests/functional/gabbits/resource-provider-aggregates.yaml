@@ -116,4 +116,3 @@ tests:
       - 'Invalid query string parameters'
   response_json_paths:
       $.errors[0].title: Bad Request
-

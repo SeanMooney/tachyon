@@ -9,40 +9,42 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 import flask
+from oslo_log import log
 
-from tachyon.api import errors
-from tachyon.api import microversion
+from tachyon.api import errors, microversion
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint(
-    "aggregates",
-    __name__,
-    url_prefix="/resource_providers/<string:rp_uuid>/aggregates"
+    "aggregates", __name__, url_prefix="/resource_providers/<string:rp_uuid>/aggregates"
 )
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
-def _mv():
+def _mv() -> microversion.Microversion:
     """Return the parsed microversion from the request context.
 
     :returns: Microversion instance
     """
-    mv = getattr(flask.g, "microversion", None)
+    mv: microversion.Microversion | None = getattr(flask.g, "microversion", None)
     if mv is None:
         return microversion.Microversion(1, 0)
     return mv
 
 
-def _httpdate(dt=None):
+def _httpdate(dt: datetime.datetime | None = None) -> str:
     """Return an HTTP-date string.
 
     :param dt: Optional datetime, defaults to now
@@ -52,7 +54,7 @@ def _httpdate(dt=None):
     return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
 
-def _check_provider_exists(session, rp_uuid):
+def _check_provider_exists(session: Any, rp_uuid: str) -> dict[str, Any]:
     """Check if a resource provider exists.
 
     :param session: Neo4j session
@@ -65,13 +67,11 @@ def _check_provider_exists(session, rp_uuid):
         uuid=rp_uuid,
     ).single()
     if not result:
-        raise errors.NotFound(
-            "No resource provider with uuid %s found" % rp_uuid
-        )
+        raise errors.NotFound("No resource provider with uuid %s found" % rp_uuid)
     return dict(result["rp"])
 
 
-def _validate_uuid(value):
+def _validate_uuid(value: str) -> str:
     """Validate and normalize a UUID string.
 
     :param value: UUID string to validate
@@ -85,7 +85,7 @@ def _validate_uuid(value):
 
 
 @bp.route("", methods=["GET"])
-def get_aggregates(rp_uuid):
+def get_aggregates(rp_uuid: str) -> tuple[flask.Response, int]:
     """Get aggregates for a resource provider.
 
     Returns list of aggregate UUIDs the provider is a member of.
@@ -113,7 +113,7 @@ def get_aggregates(rp_uuid):
 
         aggregates = result["aggregates"] if result else []
 
-    response = {
+    response: dict[str, Any] = {
         "aggregates": aggregates,
         "resource_provider_generation": provider.get("generation", 0),
     }
@@ -127,7 +127,7 @@ def get_aggregates(rp_uuid):
 
 
 @bp.route("", methods=["PUT"])
-def put_aggregates(rp_uuid):
+def put_aggregates(rp_uuid: str) -> tuple[flask.Response, int]:
     """Set aggregates for a resource provider.
 
     Request Body (1.19+):
@@ -150,6 +150,9 @@ def put_aggregates(rp_uuid):
         data = flask.request.get_json(force=True, silent=False)
     except Exception as exc:
         raise errors.BadRequest("Malformed JSON: %s" % exc)
+
+    generation: int | None
+    aggregates: list[Any]
 
     # Parse based on microversion
     if mv.is_at_least(19):
@@ -175,7 +178,7 @@ def put_aggregates(rp_uuid):
         aggregates = data
 
     # Validate aggregates are UUIDs
-    validated_aggregates = []
+    validated_aggregates: list[str] = []
     for agg in aggregates:
         validated_aggregates.append(_validate_uuid(agg))
 
@@ -219,6 +222,7 @@ def put_aggregates(rp_uuid):
                 )
 
             # Increment generation (only for new format 1.19+)
+            new_generation: int
             if mv.is_at_least(19):
                 updated = tx.run(
                     """

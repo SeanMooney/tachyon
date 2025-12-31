@@ -42,7 +42,7 @@ Imports must be grouped in the following order, with blank lines between groups:
 
 1. `__future__` imports
 2. Standard library modules
-3. Third-party library modules  
+3. Third-party library modules
 4. Local application modules
 
 ```python
@@ -217,7 +217,7 @@ Use `unittest.mock` from the standard library, not the standalone `mock` package
 # CORRECT
 from unittest import mock
 
-# INCORRECT  
+# INCORRECT
 import mock
 ```
 
@@ -391,4 +391,3 @@ Change-Id: I1234567890abcdef...
 - [PEP 8 Style Guide](https://peps.python.org/pep-0008/)
 - [oslo.config Documentation](https://docs.openstack.org/oslo.config/latest/)
 - [oslo.log Documentation](https://docs.openstack.org/oslo.log/latest/)
-

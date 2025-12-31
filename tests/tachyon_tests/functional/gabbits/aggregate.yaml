@@ -200,4 +200,3 @@ tests:
   response_forbidden_headers:
       - last-modified
       - cache-control
-

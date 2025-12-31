@@ -83,7 +83,45 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
+    "UP031", # percent format - OpenStack style uses % for logging interpolation
+    "B904",  # exception chaining - API errors intentionally hide internal details
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tachyon"]
+
+# Mypy configuration (strict mode)
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+show_column_numbers = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "flask.*",
+    "werkzeug.*",
+    "neo4j.*",
+    "microversion_parse.*",
+    "oslo_config.*",
+    "oslo_log.*",
+    "gabbi.*",
+    "oslotest.*",
+    "testtools.*",
+]
+ignore_missing_imports = true

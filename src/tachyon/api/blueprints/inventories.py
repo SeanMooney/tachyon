@@ -7,28 +7,32 @@ Implements Placement-compatible inventory management for ResourceProviders.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from typing import Any
+
 from flask import Blueprint, Response, g, jsonify, request
 from neo4j.time import DateTime
-from datetime import datetime, timezone
+from oslo_log import log
 
 from tachyon.api.errors import (
     BadRequest,
     Conflict,
-    InvalidInventory,
     InventoryInUse,
     NotFound,
     ResourceProviderGenerationConflict,
 )
 from tachyon.api.microversion import Microversion
 
+LOG = log.getLogger(__name__)
+
 bp = Blueprint(
     "inventories", __name__, url_prefix="/resource_providers/<string:uuid>/inventories"
 )
 
-INT_MAX = 2_147_483_647
+INT_MAX: int = 2_147_483_647
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app."""
     from tachyon.api.app import get_driver
 
@@ -36,7 +40,7 @@ def _driver():
 
 
 def _mv() -> Microversion:
-    mv = getattr(g, "microversion", None)
+    mv: Microversion | None = getattr(g, "microversion", None)
     if mv is None:
         return Microversion(1, 0)
     return mv
@@ -52,13 +56,15 @@ def _abs_url(path: str) -> str:
     return f"{base}{path}"
 
 
-def _format_inventory_response(inv_props: dict, generation: int) -> dict:
-    body = {"resource_provider_generation": generation}
+def _format_inventory_response(
+    inv_props: dict[str, Any], generation: int
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"resource_provider_generation": generation}
     body.update(_serialize_for_json(inv_props))
     return body
 
 
-def _normalize_inventory(inv: dict) -> dict:
+def _normalize_inventory(inv: dict[str, Any]) -> dict[str, Any]:
     # Note: validation of 'total' is done in _validate_inventory
     total = inv.get("total", 0)
     reserved = inv.get("reserved")
@@ -86,7 +92,7 @@ def _normalize_inventory(inv: dict) -> dict:
     }
 
 
-def _ensure_resource_class(session, name: str, detail: str) -> None:
+def _ensure_resource_class(session: Any, name: str, detail: str) -> None:
     """Ensure a resource class exists, otherwise raise BadRequest."""
     STANDARD_RCS = {"VCPU", "MEMORY_MB", "DISK_GB", "IPV4_ADDRESS"}
     found = session.run(
@@ -108,7 +114,7 @@ def _ensure_resource_class(session, name: str, detail: str) -> None:
 
 
 def _validate_inventory(
-    inv: dict,
+    inv: dict[str, Any],
     rc_name: str,
     mv: Microversion,
     action: str = "update",
@@ -121,7 +127,7 @@ def _validate_inventory(
         rc_name: Resource class name for error messages.
 
     Raises:
-        InvalidInventory: If values are invalid.
+        BadRequest: If values are invalid.
     """
     # Check for required 'total' field first
     if "total" not in inv:
@@ -134,7 +140,7 @@ def _validate_inventory(
     step_size = inv.get("step_size", 1)
     allocation_ratio = inv.get("allocation_ratio", 1.0)
 
-    def _check_max(value):
+    def _check_max(value: int) -> None:
         if value > INT_MAX:
             raise BadRequest("Failed validating 'maximum'")
 
@@ -204,7 +210,7 @@ def _validate_inventory(
         raise BadRequest(f"Inventory {rc_name}: max_unit must be >= min_unit.")
 
 
-def _check_provider_exists(session, uuid: str) -> None:
+def _check_provider_exists(session: Any, uuid: str) -> None:
     """Check if a resource provider exists.
 
     Args:
@@ -222,7 +228,7 @@ def _check_provider_exists(session, uuid: str) -> None:
         raise NotFound(f"No resource provider with uuid {uuid} found")
 
 
-def _serialize_for_json(value):
+def _serialize_for_json(value: Any) -> Any:
     """Convert Neo4j temporal values to JSON-serializable strings."""
     if isinstance(value, DateTime):
         # neo4j.time.DateTime implements iso_format for consistent output
@@ -290,7 +296,7 @@ def replace_inventories(uuid: str) -> tuple[Response, int]:
         raise BadRequest("'resource_provider_generation' is a required field.")
 
     # Validate all inventories before starting transaction
-    normalized_inventories = {}
+    normalized_inventories: dict[str, dict[str, Any]] = {}
     for rc_name, inv in inventories.items():
         _validate_inventory(inv, rc_name, mv, action="replace", rp_uuid=uuid)
         normalized_inventories[rc_name] = _normalize_inventory(inv)
@@ -327,7 +333,9 @@ def replace_inventories(uuid: str) -> tuple[Response, int]:
 
             # Create new inventories
             for rc_name, inv in normalized_inventories.items():
-                _ensure_resource_class(tx, rc_name, f"Unknown resource class in inventory: {rc_name}")
+                _ensure_resource_class(
+                    tx, rc_name, f"Unknown resource class in inventory: {rc_name}"
+                )
                 tx.run(
                     """
                     MATCH (rp:ResourceProvider {uuid: $uuid})
@@ -400,7 +408,7 @@ def get_inventory(uuid: str, rc_name: str) -> tuple[Response, int]:
             _check_provider_exists(session, uuid)
             raise NotFound(f"No inventory of class {rc_name} for {uuid}")
 
-    body = {"resource_provider_generation": res["generation"]}
+    body: dict[str, Any] = {"resource_provider_generation": res["generation"]}
     body.update(_serialize_for_json(res["inv"]))
     resp = jsonify(body)
     if mv.is_at_least(15):
@@ -428,9 +436,7 @@ def create_inventory(uuid: str) -> tuple[Response, int]:
 
     with _driver().session() as session:
         _check_provider_exists(session, uuid)
-        _ensure_resource_class(
-            session, rc_name, f"No such resource class {rc_name}"
-        )
+        _ensure_resource_class(session, rc_name, f"No such resource class {rc_name}")
 
         # Ensure inventory does not already exist
         exists = session.run(
@@ -513,7 +519,15 @@ def put_inventory(uuid: str, rc_name: str) -> tuple[Response, int]:
     inv = data.get("inventory") or data
 
     # Validate required fields
-    allowed_keys = {"resource_provider_generation", "total", "reserved", "min_unit", "max_unit", "step_size", "allocation_ratio"}
+    allowed_keys = {
+        "resource_provider_generation",
+        "total",
+        "reserved",
+        "min_unit",
+        "max_unit",
+        "step_size",
+        "allocation_ratio",
+    }
     extra_keys = set(data.keys()) - allowed_keys
     if extra_keys:
         raise BadRequest("JSON does not validate")
@@ -613,7 +627,6 @@ def delete_inventory(uuid: str, rc_name: str) -> Response:
 
     Will fail if the inventory has active allocations.
     """
-    mv = _mv()
     with _driver().session() as session:
         # Check for allocations first
         has_allocs = session.run(

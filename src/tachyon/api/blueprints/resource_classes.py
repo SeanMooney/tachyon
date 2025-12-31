@@ -7,43 +7,51 @@ Implements Placement-compatible resource class management.
 
 from __future__ import annotations
 
+from typing import Any
+
 import flask
+from oslo_log import log
 
 from tachyon.api import errors
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("resource_classes", __name__, url_prefix="/resource_classes")
 
 # Standard resource classes (cannot be deleted)
-STANDARD_RESOURCE_CLASSES = frozenset({
-    "VCPU",
-    "MEMORY_MB",
-    "DISK_GB",
-    "PCI_DEVICE",
-    "SRIOV_NET_VF",
-    "NUMA_SOCKET",
-    "NUMA_CORE",
-    "NUMA_THREAD",
-    "NUMA_MEMORY_MB",
-    "NET_BW_IGR_KILOBIT_PER_SEC",
-    "NET_BW_EGR_KILOBIT_PER_SEC",
-    "PCPU",
-    "VGPU",
-    "VGPU_DISPLAY_HEAD",
-    "FPGA",
-    "MEM_ENCRYPTION_CONTEXT",
-})
+STANDARD_RESOURCE_CLASSES: frozenset[str] = frozenset(
+    {
+        "VCPU",
+        "MEMORY_MB",
+        "DISK_GB",
+        "PCI_DEVICE",
+        "SRIOV_NET_VF",
+        "NUMA_SOCKET",
+        "NUMA_CORE",
+        "NUMA_THREAD",
+        "NUMA_MEMORY_MB",
+        "NET_BW_IGR_KILOBIT_PER_SEC",
+        "NET_BW_EGR_KILOBIT_PER_SEC",
+        "PCPU",
+        "VGPU",
+        "VGPU_DISPLAY_HEAD",
+        "FPGA",
+        "MEM_ENCRYPTION_CONTEXT",
+    }
+)
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
-def _is_custom(name):
+def _is_custom(name: str) -> bool:
     """Check if a resource class name is custom (user-defined).
 
     :param name: Resource class name
@@ -53,7 +61,7 @@ def _is_custom(name):
 
 
 @bp.route("", methods=["GET"])
-def list_resource_classes():
+def list_resource_classes() -> tuple[flask.Response, int]:
     """List all resource classes.
 
     :returns: Tuple of (response, status_code)
@@ -68,7 +76,7 @@ def list_resource_classes():
 
 
 @bp.route("/<string:name>", methods=["PUT"])
-def create_resource_class(name):
+def create_resource_class(name: str) -> flask.Response:
     """Create a custom resource class.
 
     Custom resource classes must start with 'CUSTOM_'.
@@ -79,9 +87,7 @@ def create_resource_class(name):
     """
     # Validate name format
     if not name.isupper():
-        raise errors.BadRequest(
-            "Resource class name '%s' must be uppercase." % name
-        )
+        raise errors.BadRequest("Resource class name '%s' must be uppercase." % name)
 
     if not _is_custom(name) and name not in STANDARD_RESOURCE_CLASSES:
         raise errors.BadRequest(
@@ -103,7 +109,7 @@ def create_resource_class(name):
 
 
 @bp.route("/<string:name>", methods=["GET"])
-def get_resource_class(name):
+def get_resource_class(name: str) -> tuple[flask.Response, int]:
     """Get a specific resource class.
 
     :param name: Resource class name
@@ -122,7 +128,7 @@ def get_resource_class(name):
 
 
 @bp.route("/<string:name>", methods=["DELETE"])
-def delete_resource_class(name):
+def delete_resource_class(name: str) -> flask.Response:
     """Delete a custom resource class.
 
     Standard resource classes cannot be deleted.
@@ -164,8 +170,7 @@ def delete_resource_class(name):
         if in_use and in_use["cnt"] > 0:
             raise errors.Conflict(
                 "Resource class %s is in use by %d "
-                "inventory record(s) and cannot be deleted."
-                % (name, in_use["cnt"])
+                "inventory record(s) and cannot be deleted." % (name, in_use["cnt"])
             )
 
         session.run(

@@ -81,4 +81,3 @@ class TestClassName(base.BaseTestCase):
 - [Testing Overview](../08-testing/README.md) - Testing architecture and patterns
 - [PTI Compliance](../08-testing/pti-compliance.md) - OpenStack testing interface
 - [Technology Stack](../00-overview/technology-stack.md) - Core technology choices
-

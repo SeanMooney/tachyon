@@ -10,12 +10,15 @@ from __future__ import annotations
 import dataclasses
 
 import microversion_parse
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
 
 # The maximum supported microversion - this maps to Placement's latest
-MAX_SUPPORTED_MINOR = 39
+MAX_SUPPORTED_MINOR: int = 39
 
 # Internal value for "latest" - higher than any actual version for comparisons
-LATEST_MINOR = 999
+LATEST_MINOR: int = 999
 
 
 @dataclasses.dataclass(frozen=True, order=True)
@@ -29,7 +32,7 @@ class Microversion:
     major: int
     minor: int
 
-    def is_at_least(self, minor):
+    def is_at_least(self, minor: int) -> bool:
         """Check if this version is >= the given minor (major is fixed at 1).
 
         :param minor: Minor version to compare against
@@ -38,13 +41,13 @@ class Microversion:
         return self.minor >= minor
 
 
-def _extract(header_value):
+def _extract(header_value: str | None) -> str | None:
     """Use microversion-parse to extract the version string from headers.
 
     :param header_value: Value of the OpenStack-API-Version header
     :returns: Version string or None
     """
-    headers = {}
+    headers: dict[str, str] = {}
     if header_value:
         headers["openstack-api-version"] = header_value
 
@@ -54,7 +57,7 @@ def _extract(header_value):
         return None
 
 
-def parse(header_value):
+def parse(header_value: str | None) -> Microversion:
     """Parse the OpenStack-API-Version header into a Microversion.
 
     :param header_value: Value of the OpenStack-API-Version header

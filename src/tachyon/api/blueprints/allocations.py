@@ -8,25 +8,30 @@ Implements Placement-compatible allocation management.
 from __future__ import annotations
 
 import collections
+from typing import Any
 
 import flask
+from oslo_log import log
 
 from tachyon.api import errors
+
+LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("allocations", __name__)
 
 
-def _driver():
+def _driver() -> Any:
     """Get the Neo4j driver from the Flask app.
 
     :returns: Neo4j driver instance
     """
     from tachyon.api import app
+
     return app.get_driver()
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["GET"])
-def get_allocations(consumer_uuid):
+def get_allocations(consumer_uuid: str) -> tuple[flask.Response, int]:
     """Get allocations for a consumer.
 
     Returns allocations grouped by resource provider with resource class
@@ -50,13 +55,13 @@ def get_allocations(consumer_uuid):
             raise errors.NotFound("Consumer %s not found." % consumer_uuid)
 
         rows = res["rows"]
-        allocations = collections.defaultdict(dict)
+        allocations: dict[str, dict[str, Any]] = collections.defaultdict(dict)
         for row in rows:
             if not row["rc"] or not row["rp"]:
                 continue
             allocations[row["rp"]][row["rc"]] = row["used"]
 
-    response = {
+    response: dict[str, Any] = {
         "allocations": {
             rp: {"resources": resources} for rp, resources in allocations.items()
         },
@@ -66,7 +71,7 @@ def get_allocations(consumer_uuid):
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["PUT"])
-def put_allocations(consumer_uuid):
+def put_allocations(consumer_uuid: str) -> tuple[flask.Response, int]:
     """Create or update allocations for a consumer.
 
     Request Body:
@@ -106,8 +111,11 @@ def put_allocations(consumer_uuid):
                 raise errors.ConsumerGenerationConflict(
                     "Consumer %s generation mismatch: "
                     "expected %s, got %s."
-                    % (consumer_uuid, consumer_generation,
-                       consumer.get("generation", 0))
+                    % (
+                        consumer_uuid,
+                        consumer_generation,
+                        consumer.get("generation", 0),
+                    )
                 )
 
             # Handle project/user associations
@@ -204,7 +212,7 @@ def put_allocations(consumer_uuid):
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["DELETE"])
-def delete_allocations(consumer_uuid):
+def delete_allocations(consumer_uuid: str) -> flask.Response:
     """Delete all allocations for a consumer.
 
     :param consumer_uuid: Consumer UUID
@@ -232,7 +240,7 @@ def delete_allocations(consumer_uuid):
 
 
 @bp.route("/resource_providers/<string:rp_uuid>/allocations", methods=["GET"])
-def get_provider_allocations(rp_uuid):
+def get_provider_allocations(rp_uuid: str) -> tuple[flask.Response, int]:
     """Get all allocations against a resource provider.
 
     :param rp_uuid: Resource provider UUID
@@ -246,9 +254,7 @@ def get_provider_allocations(rp_uuid):
         ).single()
 
         if not provider:
-            raise errors.NotFound(
-                "Resource provider %s not found." % rp_uuid
-            )
+            raise errors.NotFound("Resource provider %s not found." % rp_uuid)
 
         res = session.run(
             """
@@ -264,7 +270,9 @@ def get_provider_allocations(rp_uuid):
             uuid=rp_uuid,
         )
 
-        allocations = collections.defaultdict(lambda: {"resources": {}})
+        allocations: dict[str, dict[str, Any]] = collections.defaultdict(
+            lambda: {"resources": {}}
+        )
         for row in res:
             if row["consumer_uuid"] and row["resource_class"]:
                 allocations[row["consumer_uuid"]]["resources"][
@@ -274,7 +282,9 @@ def get_provider_allocations(rp_uuid):
                     "consumer_generation"
                 ]
 
-    return flask.jsonify({
-        "allocations": dict(allocations),
-        "resource_provider_generation": provider["rp"].get("generation", 0),
-    }), 200
+    return flask.jsonify(
+        {
+            "allocations": dict(allocations),
+            "resource_provider_generation": provider["rp"].get("generation", 0),
+        }
+    ), 200

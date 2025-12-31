@@ -7,7 +7,6 @@ import os
 import wsgi_intercept
 from gabbi import driver
 from oslotest import output
-
 from tachyon_tests.functional.local_fixtures import gabbits as fixtures
 from tachyon_tests.local_fixtures import logging as capture
 

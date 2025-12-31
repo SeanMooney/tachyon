@@ -196,4 +196,3 @@ tests:
   status: 200
   response_json_paths:
       $.allocation_requests.`len`: 1
-
