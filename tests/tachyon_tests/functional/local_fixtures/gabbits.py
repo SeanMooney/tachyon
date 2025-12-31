@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Gabbi fixtures for Tachyon API functional tests.
 
 This module provides fixtures for running Gabbi YAML tests against
@@ -16,7 +18,7 @@ from gabbi import fixture as gabbi_fixture
 from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.neo4j import Neo4jContainer
 
-from tachyon.api import create_app
+from tachyon.api import app as api_app
 
 # Global app for the current test file.
 # Set by APIFixture.start_fixture(), cleared by stop_fixture().
@@ -156,11 +158,11 @@ class APIFixture(gabbi_fixture.GabbiFixture):
 
         # Set up environment variables for test data
         os.environ['RP_UUID'] = str(uuid.uuid4())
-        os.environ['RP_NAME'] = f"rp-{uuid.uuid4().hex[:8]}"
+        os.environ['RP_NAME'] = "rp-%s" % uuid.uuid4().hex[:8]
         os.environ['RP_UUID1'] = str(uuid.uuid4())
-        os.environ['RP_NAME1'] = f"rp1-{uuid.uuid4().hex[:8]}"
+        os.environ['RP_NAME1'] = "rp1-%s" % uuid.uuid4().hex[:8]
         os.environ['RP_UUID2'] = str(uuid.uuid4())
-        os.environ['RP_NAME2'] = f"rp2-{uuid.uuid4().hex[:8]}"
+        os.environ['RP_NAME2'] = "rp2-%s" % uuid.uuid4().hex[:8]
         os.environ['PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
         os.environ['ALT_PARENT_PROVIDER_UUID'] = str(uuid.uuid4())
         os.environ['CONSUMER_UUID'] = str(uuid.uuid4())
@@ -178,7 +180,7 @@ class APIFixture(gabbi_fixture.GabbiFixture):
             "NEO4J_USERNAME": self.db_fixture.username,
             "NEO4J_PASSWORD": self.db_fixture.password,
         }
-        APP = create_app(flask_config)
+        APP = api_app.create_app(flask_config)
 
     def stop_fixture(self):
         """Called after all tests in a YAML file complete."""

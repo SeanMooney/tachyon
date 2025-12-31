@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Schema helpers for Neo4j.
 
 This module defines the database schema (constraints and indexes) for Tachyon.

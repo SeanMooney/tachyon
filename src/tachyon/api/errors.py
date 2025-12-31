@@ -1,38 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Placement-compatible error handling for Tachyon API.
 
-Error responses follow the OpenStack Placement API format:
-{
-    "errors": [
-        {
-            "status": <http_status_code>,
-            "title": "<error_title>",
-            "detail": "<error_detail>"
-        }
-    ]
-}
+Error responses follow the OpenStack Placement API format::
+
+    {
+        "errors": [
+            {
+                "status": <http_status_code>,
+                "title": "<error_title>",
+                "detail": "<error_detail>"
+            }
+        ]
+    }
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from flask import Flask, Response, jsonify
+import flask
 
 
 class APIError(Exception):
     """Base exception for API errors with Placement-compatible formatting."""
 
-    status_code: int = 500
-    title: str = "Internal Server Error"
-    code: str | None = None
+    status_code = 500
+    title = "Internal Server Error"
+    code = None
 
-    def __init__(self, detail: str | None = None, code: str | None = None):
-        super().__init__(detail)
+    def __init__(self, detail=None, code=None):
+        """Initialize the API error.
+
+        :param detail: Detailed error message
+        :param code: Optional error code for programmatic handling
+        """
+        super(APIError, self).__init__(detail)
         self.detail = detail or self.title
         self.code = code or getattr(self, "code", None)
 
-    def to_response(self) -> tuple[Response, int]:
-        """Convert exception to a Placement-compatible JSON response."""
+    def to_response(self):
+        """Convert exception to a Placement-compatible JSON response.
+
+        :returns: Tuple of (JSON response, status code)
+        """
         error = {
             "status": self.status_code,
             "title": self.title,
@@ -42,7 +51,7 @@ class APIError(Exception):
             error["code"] = self.code
 
         body = {"errors": [error]}
-        return jsonify(body), self.status_code
+        return flask.jsonify(body), self.status_code
 
 
 class NotFound(APIError):
@@ -118,16 +127,13 @@ class UnsupportedMediaType(APIError):
     title = "Unsupported Media Type"
 
 
-def error_response(status: int, title: str, detail: str) -> tuple[Response, int]:
+def error_response(status, title, detail):
     """Create a Placement-compatible error response.
 
-    Args:
-        status: HTTP status code.
-        title: Short error title.
-        detail: Detailed error message.
-
-    Returns:
-        Tuple of (JSON response, status code).
+    :param status: HTTP status code
+    :param title: Short error title
+    :param detail: Detailed error message
+    :returns: Tuple of (JSON response, status code)
     """
     body = {
         "errors": [
@@ -138,62 +144,62 @@ def error_response(status: int, title: str, detail: str) -> tuple[Response, int]
             }
         ]
     }
-    return jsonify(body), status
+    return flask.jsonify(body), status
 
 
-def register_handlers(app: Flask) -> None:
-    """Register error handlers for common HTTP errors and APIError exceptions."""
+def register_handlers(app):
+    """Register error handlers for common HTTP errors and APIError exceptions.
+
+    :param app: Flask application instance
+    """
 
     @app.errorhandler(APIError)
-    def handle_api_error(error: APIError) -> tuple[Response, int]:
+    def handle_api_error(error):
         """Handle APIError subclasses."""
         return error.to_response()
 
     @app.errorhandler(404)
-    def not_found(error: Any) -> tuple[Response, int]:
+    def not_found(error):
         return error_response(404, "Not Found", "The resource could not be found.")
 
     @app.errorhandler(409)
-    def conflict(error: Any) -> tuple[Response, int]:
+    def conflict(error):
         return error_response(
             409, "Conflict", "A conflict occurred with the current state."
         )
 
     @app.errorhandler(400)
-    def bad_request(error: Any) -> tuple[Response, int]:
+    def bad_request(error):
         return error_response(400, "Bad Request", "The request is invalid.")
 
     @app.errorhandler(405)
-    def method_not_allowed(error: Any) -> tuple[Response, int]:
-        # Get the method that was attempted
-        from flask import request
-        method = request.method
+    def method_not_allowed(error):
+        method = flask.request.method
         resp, status = error_response(
             405, "Method Not Allowed",
-            f"The method {method} is not allowed for this resource."
+            "The method %s is not allowed for this resource." % method
         )
-        # Add Allow header with valid methods
         if hasattr(error, "valid_methods") and error.valid_methods:
             resp.headers["Allow"] = ", ".join(sorted(error.valid_methods))
         return resp, status
 
     @app.errorhandler(406)
-    def not_acceptable(error: Any) -> tuple[Response, int]:
+    def not_acceptable(error):
         return error_response(
             406, "Not Acceptable", "Only application/json is provided"
         )
 
     @app.errorhandler(415)
-    def unsupported_media_type(error: Any) -> tuple[Response, int]:
-        from flask import request
-        content_type = request.content_type
+    def unsupported_media_type(error):
+        content_type = flask.request.content_type
         return error_response(
             415, "Unsupported Media Type",
-            f"The media type {content_type} is not supported, use application/json"
+            "The media type %s is not supported, use application/json"
+            % content_type
         )
 
     @app.errorhandler(500)
-    def internal_error(error: Any) -> tuple[Response, int]:
+    def internal_error(error):
         return error_response(
             500, "Internal Server Error", "An unexpected error occurred."
         )

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+
+"""Logging capture fixture for tests."""
+
 import io
 import logging
 

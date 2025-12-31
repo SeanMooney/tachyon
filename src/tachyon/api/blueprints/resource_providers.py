@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Resource Providers API blueprint.
 
 Implements Placement-compatible CRUD operations for ResourceProvider nodes.
@@ -5,102 +7,137 @@ Implements Placement-compatible CRUD operations for ResourceProvider nodes.
 
 from __future__ import annotations
 
-import uuid as uuidlib
+import datetime
+import uuid
 
-from datetime import datetime, timezone
-from flask import Blueprint, Response, g, jsonify, request
+import flask
 
-from tachyon.api.errors import (
-    BadRequest,
-    Conflict,
-    Forbidden,
-    NotFound,
-    ResourceProviderGenerationConflict,
-    ResourceProviderInUse,
+from tachyon.api import errors
+from tachyon.api import microversion
+
+bp = flask.Blueprint(
+    "resource_providers", __name__, url_prefix="/resource_providers"
 )
-from tachyon.api.microversion import Microversion
-
-bp = Blueprint("resource_providers", __name__, url_prefix="/resource_providers")
 
 
 def _driver():
-    """Get the Neo4j driver from the Flask app."""
-    from tachyon.api.app import get_driver
+    """Get the Neo4j driver from the Flask app.
 
-    return get_driver()
+    :returns: Neo4j driver instance
+    """
+    from tachyon.api import app
+    return app.get_driver()
 
 
-def _mv() -> Microversion:
-    """Return the parsed microversion from the request context."""
-    mv = getattr(g, "microversion", None)
+def _mv():
+    """Return the parsed microversion from the request context.
+
+    :returns: Microversion instance
+    """
+    mv = getattr(flask.g, "microversion", None)
     if mv is None:
-        return Microversion(1, 0)
+        return microversion.Microversion(1, 0)
     return mv
 
 
-def _httpdate(dt: datetime | None = None) -> str:
-    """Return an HTTP-date string."""
-    dt = dt or datetime.now(timezone.utc)
+def _httpdate(dt=None):
+    """Return an HTTP-date string.
+
+    :param dt: Optional datetime, defaults to now
+    :returns: HTTP-date formatted string
+    """
+    dt = dt or datetime.datetime.now(datetime.timezone.utc)
     return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
 
-def _abs_url(path: str) -> str:
-    """Build absolute URL for Location headers."""
-    base = request.host_url.rstrip("/")
-    return f"{base}{path}"
+def _abs_url(path):
+    """Build absolute URL for Location headers.
+
+    :param path: URL path
+    :returns: Absolute URL string
+    """
+    base = flask.request.host_url.rstrip("/")
+    return "%s%s" % (base, path)
 
 
 def _require_admin():
-    """Enforce a simple admin token check for now."""
-    token = request.headers.get("x-auth-token") or request.headers.get("X-Auth-Token")
+    """Enforce a simple admin token check for now.
+
+    :raises errors.Forbidden: If admin token not provided
+    """
+    token = (flask.request.headers.get("x-auth-token") or
+             flask.request.headers.get("X-Auth-Token"))
     if token != "admin":
-        raise Forbidden("Admin role required.")
+        raise errors.Forbidden("Admin role required.")
 
 
-def _validate_uuid(value: str, field: str) -> str:
-    """Validate and normalize UUID strings (accept dashless input)."""
+def _validate_uuid(value, field):
+    """Validate and normalize UUID strings (accept dashless input).
+
+    :param value: UUID string to validate
+    :param field: Field name for error messages
+    :returns: Normalized UUID string
+    :raises errors.BadRequest: If UUID is invalid
+    """
     try:
-        normalized = str(uuidlib.UUID(value))
-    except Exception:
-        raise BadRequest(f"Failed validating 'format' for '{field}'.")
+        normalized = str(uuid.UUID(value))
+    except (ValueError, TypeError, AttributeError):
+        raise errors.BadRequest("Failed validating 'format' for '%s'." % field)
     return normalized
 
 
-def _build_links(provider_uuid: str, mv: Microversion) -> list[dict]:
-    """Build Placement-style links array respecting microversion."""
+def _build_links(provider_uuid, mv):
+    """Build Placement-style links array respecting microversion.
+
+    :param provider_uuid: Resource provider UUID
+    :param mv: Microversion instance
+    :returns: List of link dictionaries
+    """
     links = [
-        {"rel": "self", "href": f"/resource_providers/{provider_uuid}"},
-        {"rel": "inventories", "href": f"/resource_providers/{provider_uuid}/inventories"},
-        {"rel": "usages", "href": f"/resource_providers/{provider_uuid}/usages"},
-        {"rel": "aggregates", "href": f"/resource_providers/{provider_uuid}/aggregates"},
-        {"rel": "traits", "href": f"/resource_providers/{provider_uuid}/traits"},
+        {"rel": "self",
+         "href": "/resource_providers/%s" % provider_uuid},
+        {"rel": "inventories",
+         "href": "/resource_providers/%s/inventories" % provider_uuid},
+        {"rel": "usages",
+         "href": "/resource_providers/%s/usages" % provider_uuid},
+        {"rel": "aggregates",
+         "href": "/resource_providers/%s/aggregates" % provider_uuid},
+        {"rel": "traits",
+         "href": "/resource_providers/%s/traits" % provider_uuid},
     ]
     if mv.is_at_least(11):
-        links.append(
-            {"rel": "allocations", "href": f"/resource_providers/{provider_uuid}/allocations"}
-        )
+        links.append({
+            "rel": "allocations",
+            "href": "/resource_providers/%s/allocations" % provider_uuid
+        })
     return links
 
 
-def _parse_required(value: str, mv: Microversion) -> tuple[list[str], list[str]]:
-    """Parse the required query parameter into required/forbidden traits."""
-    expected_form = (
-        "HW_CPU_X86_VMX,!CUSTOM_MAGIC."
-        if mv.is_at_least(22)
-        else "HW_CPU_X86_VMX,CUSTOM_MAGIC."
-    )
+def _parse_required(value, mv):
+    """Parse the required query parameter into required/forbidden traits.
 
-    def _invalid(got: str | None = None):
-        suffix = f" Got: {got}" if got is not None else ""
-        raise BadRequest(
-            f"Invalid query string parameters: Expected 'required' parameter value of the form: {expected_form}{suffix}"
+    :param value: Required parameter value
+    :param mv: Microversion instance
+    :returns: Tuple of (required_traits, forbidden_traits)
+    :raises errors.BadRequest: If parameter format is invalid
+    """
+    if mv.is_at_least(22):
+        expected_form = "HW_CPU_X86_VMX,!CUSTOM_MAGIC."
+    else:
+        expected_form = "HW_CPU_X86_VMX,CUSTOM_MAGIC."
+
+    def _invalid(got=None):
+        suffix = " Got: %s" % got if got is not None else ""
+        raise errors.BadRequest(
+            "Invalid query string parameters: Expected 'required' "
+            "parameter value of the form: %s%s" % (expected_form, suffix)
         )
 
     if value == "":
         _invalid()
 
-    required: list[str] = []
-    forbidden: list[str] = []
+    required = []
+    forbidden = []
     tokens = [t.strip() for t in value.split(",")]
     if any(t == "" for t in tokens):
         _invalid()
@@ -118,28 +155,35 @@ def _parse_required(value: str, mv: Microversion) -> tuple[list[str], list[str]]
     return required, forbidden
 
 
-def _parse_resources(value: str) -> list[tuple[str, int]]:
-    resources: list[tuple[str, int]] = []
+def _parse_resources(value):
+    """Parse resources query parameter.
+
+    :param value: Resources parameter value
+    :returns: List of (resource_class, amount) tuples
+    :raises errors.BadRequest: If parameter format is invalid
+    """
+    resources = []
     for token in value.split(","):
         if ":" not in token:
-            raise BadRequest("Invalid query string parameters")
+            raise errors.BadRequest("Invalid query string parameters")
         rc, amount = token.split(":", 1)
         try:
             resources.append((rc, int(amount)))
         except ValueError:
-            raise BadRequest("Invalid query string parameters")
+            raise errors.BadRequest("Invalid query string parameters")
     return resources
 
 
-def _parse_member_of(value: str) -> list[str]:
+def _parse_member_of(value):
     """Parse member_of query parameter.
 
     Formats supported:
         - Single UUID: <uuid>
         - With 'in:' prefix: in:<uuid1>,<uuid2>,...
 
-    Returns:
-        List of aggregate UUIDs.
+    :param value: member_of parameter value
+    :returns: List of aggregate UUIDs
+    :raises errors.BadRequest: If UUIDs are invalid
     """
     if value.startswith("in:"):
         uuid_str = value[3:]
@@ -152,31 +196,44 @@ def _parse_member_of(value: str) -> list[str]:
         if not agg:
             continue
         try:
-            normalized = str(uuidlib.UUID(agg))
+            normalized = str(uuid.UUID(agg))
             aggregates.append(normalized)
-        except Exception:
-            raise BadRequest(
-                "Invalid query string parameters: Expected 'member_of' parameter "
-                "to contain valid UUID(s)."
+        except (ValueError, TypeError, AttributeError):
+            raise errors.BadRequest(
+                "Invalid query string parameters: Expected 'member_of' "
+                "parameter to contain valid UUID(s)."
             )
 
     return aggregates
 
 
-def _missing_traits(session, traits: list[str]) -> list[str]:
+def _missing_traits(session, traits):
+    """Find traits that don't exist in the database.
+
+    :param session: Neo4j session
+    :param traits: List of trait names to check
+    :returns: List of missing trait names
+    """
     if not traits:
         return []
     result = session.run(
-        "MATCH (t:Trait) WHERE t.name IN $names RETURN t.name AS name", names=traits
+        "MATCH (t:Trait) WHERE t.name IN $names RETURN t.name AS name",
+        names=traits
     )
     existing = {row["name"] for row in result}
     return [t for t in traits if t not in existing]
 
 
-def _provider_traits_match(
-    session, rp_uuid: str, required: list[str], forbidden: list[str], mv: Microversion
-) -> bool:
-    """Check provider satisfies required and forbidden trait sets."""
+def _provider_traits_match(session, rp_uuid, required, forbidden, mv):
+    """Check provider satisfies required and forbidden trait sets.
+
+    :param session: Neo4j session
+    :param rp_uuid: Resource provider UUID
+    :param required: List of required trait names
+    :param forbidden: List of forbidden trait names
+    :param mv: Microversion instance
+    :returns: True if provider matches trait requirements
+    """
     if not required and not forbidden:
         return True
 
@@ -198,10 +255,14 @@ def _provider_traits_match(
     return True
 
 
-def _provider_in_aggregates(
-    session, rp_uuid: str, aggregate_uuids: list[str]
-) -> bool:
-    """Check if provider is a member of any of the specified aggregates."""
+def _provider_in_aggregates(session, rp_uuid, aggregate_uuids):
+    """Check if provider is a member of any of the specified aggregates.
+
+    :param session: Neo4j session
+    :param rp_uuid: Resource provider UUID
+    :param aggregate_uuids: List of aggregate UUIDs
+    :returns: True if provider is member of any aggregate
+    """
     if not aggregate_uuids:
         return True
 
@@ -218,10 +279,14 @@ def _provider_in_aggregates(
     return res and res["cnt"] > 0
 
 
-def _provider_has_capacity(
-    session, rp_uuid: str, requirements: list[tuple[str, int]]
-) -> bool:
-    """Check provider has capacity for all requested resources."""
+def _provider_has_capacity(session, rp_uuid, requirements):
+    """Check provider has capacity for all requested resources.
+
+    :param session: Neo4j session
+    :param rp_uuid: Resource provider UUID
+    :param requirements: List of (resource_class, amount) tuples
+    :returns: True if provider has sufficient capacity
+    """
     for rc_name, amount in requirements:
         res = session.run(
             """
@@ -251,14 +316,15 @@ def _provider_has_capacity(
     return True
 
 
-def _format_provider(
-    rp: dict,
-    mv: Microversion,
-    root_uuid: str | None = None,
-    parent_uuid: str | None = None,
-) -> dict:
-    """Format a resource provider node for API response."""
+def _format_provider(rp, mv, root_uuid=None, parent_uuid=None):
+    """Format a resource provider node for API response.
 
+    :param rp: Resource provider dict
+    :param mv: Microversion instance
+    :param root_uuid: Optional root provider UUID
+    :param parent_uuid: Optional parent provider UUID
+    :returns: Formatted response dict
+    """
     body = {
         "uuid": rp.get("uuid"),
         "name": rp.get("name"),
@@ -276,7 +342,7 @@ def _format_provider(
 
 
 @bp.route("", methods=["GET"])
-def list_resource_providers() -> tuple[Response, int]:
+def list_resource_providers():
     """List resource providers with optional filtering.
 
     Query Parameters:
@@ -286,46 +352,52 @@ def list_resource_providers() -> tuple[Response, int]:
         member_of: Filter to providers in specified aggregate(s).
         required: Filter to providers with required/forbidden traits.
         resources: Filter to providers with capacity for specified resources.
+
+    :returns: Tuple of (response, status_code)
     """
     _require_admin()
     mv = _mv()
 
-    allowed_params = {"name", "uuid", "in_tree", "member_of", "required", "resources"}
-    unknown = set(request.args.keys()) - allowed_params
+    allowed_params = {"name", "uuid", "in_tree", "member_of", "required",
+                      "resources"}
+    unknown = set(flask.request.args.keys()) - allowed_params
     if unknown:
-        raise BadRequest("Invalid query string parameters")
+        raise errors.BadRequest("Invalid query string parameters")
 
-    name = request.args.get("name")
-    uuid_filter = request.args.get("uuid")
-    in_tree = request.args.get("in_tree")
-    member_of_param = request.args.get("member_of")
-    required_param = request.args.get("required")
-    resources_param = request.args.get("resources")
+    name = flask.request.args.get("name")
+    uuid_filter = flask.request.args.get("uuid")
+    in_tree = flask.request.args.get("in_tree")
+    member_of_param = flask.request.args.get("member_of")
+    required_param = flask.request.args.get("required")
+    resources_param = flask.request.args.get("resources")
 
     # member_of requires microversion >= 1.3
     if member_of_param is not None and not mv.is_at_least(3):
-        raise BadRequest("Invalid query string parameters")
+        raise errors.BadRequest("Invalid query string parameters")
 
     if uuid_filter:
         try:
             uuid_filter = _validate_uuid(uuid_filter, "uuid")
-        except BadRequest:
-            raise BadRequest("Invalid query string parameters")
+        except errors.BadRequest:
+            raise errors.BadRequest("Invalid query string parameters")
     if in_tree:
         in_tree = _validate_uuid(in_tree, "in_tree")
 
-    required_traits: list[str] = []
-    forbidden_traits: list[str] = []
+    required_traits = []
+    forbidden_traits = []
     if required_param is not None:
         # required supported starting at mv 1.18
         if mv.minor < 18:
-            raise BadRequest("Additional properties are not allowed")
+            raise errors.BadRequest("Additional properties are not allowed")
         required_traits, forbidden_traits = _parse_required(required_param, mv)
 
-    required_resources = _parse_resources(resources_param) if resources_param else []
+    if resources_param:
+        required_resources = _parse_resources(resources_param)
+    else:
+        required_resources = []
 
     # Parse member_of parameter
-    member_of_aggregates: list[str] = []
+    member_of_aggregates = []
     if member_of_param:
         member_of_aggregates = _parse_member_of(member_of_param)
 
@@ -333,11 +405,13 @@ def list_resource_providers() -> tuple[Response, int]:
         if required_traits:
             missing = _missing_traits(session, required_traits)
             if missing:
-                raise BadRequest(f"No such trait(s): {', '.join(missing)}.")
+                raise errors.BadRequest(
+                    "No such trait(s): %s." % ", ".join(missing)
+                )
 
         cypher = "MATCH (rp:ResourceProvider)"
         clauses = []
-        params: dict = {}
+        params = {}
         if name:
             clauses.append("rp.name CONTAINS $name")
             params["name"] = name
@@ -345,9 +419,6 @@ def list_resource_providers() -> tuple[Response, int]:
             clauses.append("rp.uuid = $uuid_filter")
             params["uuid_filter"] = uuid_filter
         if in_tree:
-            # Find all providers in the same tree as the specified provider
-            # First find the root of the tree containing the specified provider,
-            # then get all descendants of that root
             clauses.append(
                 """EXISTS {
                     MATCH (specified:ResourceProvider {uuid: $in_tree})
@@ -360,20 +431,18 @@ def list_resource_providers() -> tuple[Response, int]:
             params["in_tree"] = in_tree
 
         where_str = " AND ".join(clauses) if clauses else "true"
-        result = session.run(
-            f"""
-            {cypher}
-        WHERE {where_str}
+        query = """
+            %s
+        WHERE %s
         OPTIONAL MATCH (parent:ResourceProvider)-[:PARENT_OF]->(rp)
         OPTIONAL MATCH path = (root:ResourceProvider)-[:PARENT_OF*0..]->(rp)
-        WHERE NOT EXISTS {{ MATCH (:ResourceProvider)-[:PARENT_OF]->(root) }}
+        WHERE NOT EXISTS { MATCH (:ResourceProvider)-[:PARENT_OF]->(root) }
         WITH rp, parent, root
         ORDER BY length(path) DESC
         WITH rp, parent, collect(root)[0] AS root_provider
         RETURN rp, parent.uuid AS parent_uuid, root_provider.uuid AS root_uuid
-            """,
-            **params,
-        )
+            """ % (cypher, where_str)
+        result = session.run(query, **params)
 
         providers = []
         for record in result:
@@ -387,12 +456,14 @@ def list_resource_providers() -> tuple[Response, int]:
                     continue
 
             if required_resources:
-                if not _provider_has_capacity(session, rp_uuid, required_resources):
+                if not _provider_has_capacity(session, rp_uuid,
+                                              required_resources):
                     continue
 
             # Check member_of filter
             if member_of_aggregates:
-                if not _provider_in_aggregates(session, rp_uuid, member_of_aggregates):
+                if not _provider_in_aggregates(session, rp_uuid,
+                                               member_of_aggregates):
                     continue
 
             providers.append(
@@ -404,7 +475,7 @@ def list_resource_providers() -> tuple[Response, int]:
                 )
             )
 
-    resp = jsonify({"resource_providers": providers})
+    resp = flask.jsonify({"resource_providers": providers})
     if mv.is_at_least(15):
         resp.headers["cache-control"] = "no-cache"
         resp.headers["last-modified"] = _httpdate()
@@ -412,41 +483,44 @@ def list_resource_providers() -> tuple[Response, int]:
 
 
 @bp.route("", methods=["POST"])
-def create_resource_provider() -> tuple[Response, int]:
+def create_resource_provider():
     """Create a new resource provider.
 
     Request Body:
         name: Required. Provider name (must be unique).
         uuid: Optional. Provider UUID (generated if not provided).
         parent_provider_uuid: Optional. UUID of parent provider.
+
+    :returns: Tuple of (response, status_code)
     """
     _require_admin()
     mv = _mv()
 
     try:
-        data = request.get_json(force=True, silent=False) or {}
+        data = flask.request.get_json(force=True, silent=False) or {}
     except Exception as exc:
-        raise BadRequest(f"Malformed JSON: {exc}")
+        raise errors.BadRequest("Malformed JSON: %s" % exc)
 
     name = data.get("name")
     parent_uuid = data.get("parent_provider_uuid")
-    rp_uuid_raw = data.get("uuid") or str(uuidlib.uuid4())
+    rp_uuid_raw = data.get("uuid") or str(uuid.uuid4())
     rp_uuid = _validate_uuid(rp_uuid_raw, "uuid")
 
     if not name:
-        raise BadRequest("'name' is a required property")
+        raise errors.BadRequest("'name' is a required property")
     if len(name) > 200:
-        raise BadRequest("Failed validating 'maxLength'")
+        raise errors.BadRequest("Failed validating 'maxLength'")
 
     if parent_uuid:
         parent_uuid = _validate_uuid(parent_uuid, "parent_provider_uuid")
         if parent_uuid == rp_uuid:
-            raise BadRequest(
+            raise errors.BadRequest(
                 "parent provider UUID cannot be same as UUID. "
-                f"Unable to create resource provider \"{name}\", {rp_uuid}:"
+                "Unable to create resource provider \"%s\", %s:" %
+                (name, rp_uuid)
             )
         if not mv.is_at_least(14):
-            raise BadRequest("JSON does not validate")
+            raise errors.BadRequest("JSON does not validate")
 
     status_code = 200 if mv.is_at_least(20) else 201
 
@@ -456,26 +530,27 @@ def create_resource_provider() -> tuple[Response, int]:
             "MATCH (rp:ResourceProvider {uuid: $uuid}) RETURN rp", uuid=rp_uuid
         ).single()
         if duplicate_uuid:
-            raise Conflict(
-                f"Conflicting resource provider uuid: {rp_uuid} already exists"
+            raise errors.Conflict(
+                "Conflicting resource provider uuid: %s already exists" %
+                rp_uuid
             )
 
         duplicate_name = session.run(
             "MATCH (rp:ResourceProvider {name: $name}) RETURN rp", name=name
         ).single()
         if duplicate_name:
-            raise Conflict(
-                f"Conflicting resource provider name: {name} already exists",
+            raise errors.Conflict(
+                "Conflicting resource provider name: %s already exists" % name,
                 code="placement.duplicate_name",
             )
 
-        parent_node = None
         if parent_uuid:
             parent_node = session.run(
-                "MATCH (p:ResourceProvider {uuid: $uuid}) RETURN p", uuid=parent_uuid
+                "MATCH (p:ResourceProvider {uuid: $uuid}) RETURN p",
+                uuid=parent_uuid
             ).single()
             if not parent_node:
-                raise BadRequest("parent provider UUID does not exist")
+                raise errors.BadRequest("parent provider UUID does not exist")
 
         result = session.run(
             """
@@ -499,7 +574,7 @@ def create_resource_provider() -> tuple[Response, int]:
         ).single()
 
         if not result:
-            raise BadRequest("Failed to create resource provider.")
+            raise errors.BadRequest("Failed to create resource provider.")
 
         root_uuid = parent_uuid or rp_uuid
         body = _format_provider(
@@ -509,27 +584,33 @@ def create_resource_provider() -> tuple[Response, int]:
             parent_uuid=parent_uuid,
         )
 
-    location = _abs_url(f"/resource_providers/{rp_uuid}")
+    location = _abs_url("/resource_providers/%s" % rp_uuid)
     if status_code == 201:
-        resp = Response(status=201)
+        resp = flask.Response(status=201)
         resp.headers["Location"] = location
         resp.headers.pop("Content-Type", None)
         return resp, 201
 
-    resp = jsonify(body)
+    resp = flask.jsonify(body)
     resp.headers["Location"] = location
     return resp, 200
 
 
-@bp.route("/<string:uuid>", methods=["GET"])
-def get_resource_provider(uuid: str) -> tuple[Response, int]:
-    """Get a specific resource provider by UUID."""
+@bp.route("/<string:rp_uuid>", methods=["GET"])
+def get_resource_provider(rp_uuid):
+    """Get a specific resource provider by UUID.
+
+    :param rp_uuid: Resource provider UUID
+    :returns: Tuple of (response, status_code)
+    """
     _require_admin()
     mv = _mv()
     try:
-        uuid = _validate_uuid(uuid, "uuid")
-    except BadRequest:
-        raise NotFound(f"No resource provider with uuid {uuid} found.")
+        rp_uuid = _validate_uuid(rp_uuid, "uuid")
+    except errors.BadRequest:
+        raise errors.NotFound(
+            "No resource provider with uuid %s found." % rp_uuid
+        )
 
     with _driver().session() as session:
         record = session.run(
@@ -543,13 +624,15 @@ def get_resource_provider(uuid: str) -> tuple[Response, int]:
             WITH rp, parent, collect(root)[0] AS root_provider
             RETURN rp, parent.uuid AS parent_uuid, root_provider.uuid AS root_uuid
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
 
         if not record:
-            raise NotFound(f"No resource provider with uuid {uuid} found.")
+            raise errors.NotFound(
+                "No resource provider with uuid %s found." % rp_uuid
+            )
 
-    resp = jsonify(
+    resp = flask.jsonify(
         _format_provider(
             dict(record["rp"]),
             mv,
@@ -563,30 +646,33 @@ def get_resource_provider(uuid: str) -> tuple[Response, int]:
     return resp, 200
 
 
-@bp.route("/<string:uuid>", methods=["PUT"])
-def update_resource_provider(uuid: str) -> tuple[Response, int]:
+@bp.route("/<string:rp_uuid>", methods=["PUT"])
+def update_resource_provider(rp_uuid):
     """Update a resource provider.
 
     Request Body:
         name: Optional. New provider name.
         generation: Required. Current generation for optimistic concurrency.
         parent_provider_uuid: Optional. New parent UUID (re-parenting).
+
+    :param rp_uuid: Resource provider UUID
+    :returns: Tuple of (response, status_code)
     """
     _require_admin()
     mv = _mv()
-    uuid = _validate_uuid(uuid, "uuid")
+    rp_uuid = _validate_uuid(rp_uuid, "uuid")
 
     try:
-        data = request.get_json(force=True, silent=False) or {}
+        data = flask.request.get_json(force=True, silent=False) or {}
     except Exception as exc:
-        raise BadRequest(f"Malformed JSON: {exc}")
+        raise errors.BadRequest("Malformed JSON: %s" % exc)
 
     allowed_keys = {"name", "generation", "parent_provider_uuid"}
     extra_keys = set(data.keys()) - allowed_keys
     if extra_keys:
         if "uuid" in extra_keys:
-            raise BadRequest("Additional properties are not allowed")
-        raise BadRequest("JSON does not validate")
+            raise errors.BadRequest("Additional properties are not allowed")
+        raise errors.BadRequest("JSON does not validate")
 
     name = data.get("name")
     generation = data.get("generation")
@@ -596,15 +682,17 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
     has_parent_update = new_parent is not _NOT_SET
 
     if name and len(name) > 200:
-        raise BadRequest("Failed validating 'maxLength'")
+        raise errors.BadRequest("Failed validating 'maxLength'")
 
     if has_parent_update:
         if new_parent is not None:
-            if new_parent == uuid:
-                raise BadRequest("creating loop in the provider tree is not allowed.")
+            if new_parent == rp_uuid:
+                raise errors.BadRequest(
+                    "creating loop in the provider tree is not allowed."
+                )
             new_parent = _validate_uuid(new_parent, "parent_provider_uuid")
         if not mv.is_at_least(14):
-            raise BadRequest("JSON does not validate")
+            raise errors.BadRequest("JSON does not validate")
 
     # Before microversion 1.17, generation was optional and not incremented
     require_generation = mv.is_at_least(17)
@@ -616,52 +704,63 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
             OPTIONAL MATCH (parent:ResourceProvider)-[:PARENT_OF]->(rp)
             RETURN rp, parent.uuid AS parent_uuid
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
         if not existing:
-            raise NotFound(f"No resource provider with uuid {uuid} found")
+            raise errors.NotFound(
+                "No resource provider with uuid %s found" % rp_uuid
+            )
 
         current_parent_uuid = existing["parent_uuid"]
 
         if name:
             dup_name = session.run(
-                "MATCH (rp:ResourceProvider {name: $name}) WHERE rp.uuid <> $uuid RETURN rp",
+                "MATCH (rp:ResourceProvider {name: $name}) "
+                "WHERE rp.uuid <> $uuid RETURN rp",
                 name=name,
-                uuid=uuid,
+                uuid=rp_uuid,
             ).single()
             if dup_name:
-                raise Conflict(
-                    "Conflicting resource provider name: %s already exists" % name,
+                raise errors.Conflict(
+                    "Conflicting resource provider name: %s already exists"
+                    % name,
                     code="placement.duplicate_name",
                 )
 
         current_generation = existing["rp"].get("generation", 0)
         if require_generation and generation is None:
-            raise BadRequest("'generation' is a required field for updates.")
+            raise errors.BadRequest(
+                "'generation' is a required field for updates."
+            )
 
         if generation is not None and generation != current_generation:
-            raise ResourceProviderGenerationConflict(
-                f"Generation mismatch for resource provider {uuid}."
+            raise errors.ResourceProviderGenerationConflict(
+                "Generation mismatch for resource provider %s." % rp_uuid
             )
 
         if has_parent_update:
             # Re-parenting rules: only allowed from 1.37 onwards
             if not mv.is_at_least(37):
                 if new_parent is None and current_parent_uuid is not None:
-                    raise BadRequest("un-parenting a provider is not currently allowed")
-                if (
-                    new_parent is not None
-                    and current_parent_uuid is not None
-                    and new_parent != current_parent_uuid
-                ):
-                    raise BadRequest("re-parenting a provider is not currently allowed")
+                    raise errors.BadRequest(
+                        "un-parenting a provider is not currently allowed"
+                    )
+                if (new_parent is not None and
+                        current_parent_uuid is not None and
+                        new_parent != current_parent_uuid):
+                    raise errors.BadRequest(
+                        "re-parenting a provider is not currently allowed"
+                    )
 
             if new_parent is not None:
                 parent_exists = session.run(
-                    "MATCH (p:ResourceProvider {uuid: $uuid}) RETURN p", uuid=new_parent
+                    "MATCH (p:ResourceProvider {uuid: $uuid}) RETURN p",
+                    uuid=new_parent
                 ).single()
                 if not parent_exists:
-                    raise BadRequest("parent provider UUID does not exist")
+                    raise errors.BadRequest(
+                        "parent provider UUID does not exist"
+                    )
 
                 # Prevent cycles
                 cycle = session.run(
@@ -672,14 +771,16 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
                     WHERE desc.uuid = $parent_uuid
                     RETURN desc
                     """,
-                    uuid=uuid,
+                    uuid=rp_uuid,
                     parent_uuid=new_parent,
                 ).single()
                 if cycle:
-                    raise BadRequest("creating loop in the provider tree is not allowed.")
+                    raise errors.BadRequest(
+                        "creating loop in the provider tree is not allowed."
+                    )
 
         # Perform update
-        result = session.run(
+        session.run(
             """
             MATCH (rp:ResourceProvider {uuid: $uuid})
             SET rp.name = COALESCE($name, rp.name),
@@ -688,7 +789,7 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
             OPTIONAL MATCH (rp)<-[rel:PARENT_OF]-(:ResourceProvider)
             RETURN rp, rel
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
             name=name,
         ).single()
 
@@ -700,7 +801,7 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
                 OPTIONAL MATCH (old_parent:ResourceProvider)-[old:PARENT_OF]->(rp)
                 DELETE old
                 """,
-                uuid=uuid,
+                uuid=rp_uuid,
             )
             if new_parent:
                 session.run(
@@ -709,7 +810,7 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
                     MATCH (parent:ResourceProvider {uuid: $parent_uuid})
                     CREATE (parent)-[:PARENT_OF]->(rp)
                     """,
-                    uuid=uuid,
+                    uuid=rp_uuid,
                     parent_uuid=new_parent,
                 )
 
@@ -721,7 +822,7 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
                 MATCH (rp:ResourceProvider {uuid: $uuid})
                 SET rp.generation = $generation
                 """,
-                uuid=uuid,
+                uuid=rp_uuid,
                 generation=new_generation,
             )
 
@@ -737,48 +838,53 @@ def update_resource_provider(uuid: str) -> tuple[Response, int]:
             WITH rp, parent, collect(root)[0] AS root_provider
             RETURN rp, parent.uuid AS parent_uuid, root_provider.uuid AS root_uuid
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
 
     body = _format_provider(
-        {**dict(record["rp"]), "generation": new_generation},
+        dict(record["rp"], generation=new_generation),
         mv,
         root_uuid=record["root_uuid"],
         parent_uuid=record["parent_uuid"],
     )
-    resp = jsonify(body)
+    resp = flask.jsonify(body)
     if mv.is_at_least(15):
         resp.headers["cache-control"] = "no-cache"
         resp.headers["last-modified"] = _httpdate()
     return resp, 200
 
 
-@bp.route("/<string:uuid>", methods=["DELETE"])
-def delete_resource_provider(uuid: str) -> Response:
+@bp.route("/<string:rp_uuid>", methods=["DELETE"])
+def delete_resource_provider(rp_uuid):
     """Delete a resource provider.
 
     Will fail if the provider has allocations or child providers.
+
+    :param rp_uuid: Resource provider UUID
+    :returns: Response with status 204
     """
     _require_admin()
     with _driver().session() as session:
         # Check if provider exists
         exists = session.run(
             "MATCH (rp:ResourceProvider {uuid: $uuid}) RETURN rp",
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
         if not exists:
-            raise NotFound(
-                f"No resource provider with uuid {uuid} found for delete"
+            raise errors.NotFound(
+                "No resource provider with uuid %s found for delete" % rp_uuid
             )
 
         # Check for child providers
         has_children = session.run(
-            "MATCH (rp:ResourceProvider {uuid: $uuid})-[:PARENT_OF]->() RETURN count(*) as cnt",
-            uuid=uuid,
+            "MATCH (rp:ResourceProvider {uuid: $uuid})-[:PARENT_OF]->() "
+            "RETURN count(*) as cnt",
+            uuid=rp_uuid,
         ).single()
         if has_children and has_children["cnt"] > 0:
-            raise ResourceProviderInUse(
-                f"Unable to delete parent resource provider {uuid}: It has child resource providers.",
+            raise errors.ResourceProviderInUse(
+                "Unable to delete parent resource provider %s: "
+                "It has child resource providers." % rp_uuid,
                 code="placement.resource_provider.cannot_delete_parent"
             )
 
@@ -788,19 +894,19 @@ def delete_resource_provider(uuid: str) -> Response:
             MATCH (rp:ResourceProvider {uuid: $uuid})-[:HAS_INVENTORY]->(inv)<-[:CONSUMES]-()
             RETURN count(*) as cnt
             """,
-            uuid=uuid,
+            uuid=rp_uuid,
         ).single()
         if has_allocations and has_allocations["cnt"] > 0:
-            raise ResourceProviderInUse(
-                f"Resource provider {uuid} has active allocations."
+            raise errors.ResourceProviderInUse(
+                "Resource provider %s has active allocations." % rp_uuid
             )
 
         # Safe to delete
         session.run(
             "MATCH (rp:ResourceProvider {uuid: $uuid}) DETACH DELETE rp",
-            uuid=uuid,
+            uuid=rp_uuid,
         )
 
-    resp = Response(status=204)
+    resp = flask.Response(status=204)
     resp.headers.pop("Content-Type", None)
     return resp

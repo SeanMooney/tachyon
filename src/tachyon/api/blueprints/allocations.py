@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Allocations API blueprint.
 
 Implements Placement-compatible allocation management.
@@ -5,32 +7,33 @@ Implements Placement-compatible allocation management.
 
 from __future__ import annotations
 
-from collections import defaultdict
+import collections
 
-from flask import Blueprint, Response, jsonify, request
+import flask
 
-from tachyon.api.errors import (
-    BadRequest,
-    ConsumerGenerationConflict,
-    NotFound,
-)
+from tachyon.api import errors
 
-bp = Blueprint("allocations", __name__)
+bp = flask.Blueprint("allocations", __name__)
 
 
 def _driver():
-    """Get the Neo4j driver from the Flask app."""
-    from tachyon.api.app import get_driver
+    """Get the Neo4j driver from the Flask app.
 
-    return get_driver()
+    :returns: Neo4j driver instance
+    """
+    from tachyon.api import app
+    return app.get_driver()
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["GET"])
-def get_allocations(consumer_uuid: str) -> tuple[Response, int]:
+def get_allocations(consumer_uuid):
     """Get allocations for a consumer.
 
     Returns allocations grouped by resource provider with resource class
     amounts and consumer generation.
+
+    :param consumer_uuid: Consumer UUID
+    :returns: Tuple of (response, status_code)
     """
     with _driver().session() as session:
         res = session.run(
@@ -44,10 +47,10 @@ def get_allocations(consumer_uuid: str) -> tuple[Response, int]:
         ).single()
 
         if not res:
-            raise NotFound(f"Consumer {consumer_uuid} not found.")
+            raise errors.NotFound("Consumer %s not found." % consumer_uuid)
 
         rows = res["rows"]
-        allocations: dict[str, dict] = defaultdict(dict)
+        allocations = collections.defaultdict(dict)
         for row in rows:
             if not row["rc"] or not row["rp"]:
                 continue
@@ -59,11 +62,11 @@ def get_allocations(consumer_uuid: str) -> tuple[Response, int]:
         },
         "consumer_generation": res["c"].get("generation", 0),
     }
-    return jsonify(response), 200
+    return flask.jsonify(response), 200
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["PUT"])
-def put_allocations(consumer_uuid: str) -> tuple[Response, int]:
+def put_allocations(consumer_uuid):
     """Create or update allocations for a consumer.
 
     Request Body:
@@ -71,15 +74,18 @@ def put_allocations(consumer_uuid: str) -> tuple[Response, int]:
         consumer_generation: Required. Current consumer generation (0 for new).
         project_id: Optional. Project ID for the consumer.
         user_id: Optional. User ID for the consumer.
+
+    :param consumer_uuid: Consumer UUID
+    :returns: Tuple of (response, status_code)
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = flask.request.get_json(force=True, silent=True) or {}
     allocations = body.get("allocations") or {}
     consumer_generation = body.get("consumer_generation")
     project_id = body.get("project_id")
     user_id = body.get("user_id")
 
     if consumer_generation is None:
-        raise BadRequest("'consumer_generation' is a required field.")
+        raise errors.BadRequest("'consumer_generation' is a required field.")
 
     with _driver().session() as session:
         tx = session.begin_transaction()
@@ -97,10 +103,11 @@ def put_allocations(consumer_uuid: str) -> tuple[Response, int]:
             ).single()["c"]
 
             if consumer.get("generation", 0) != consumer_generation:
-                raise ConsumerGenerationConflict(
-                    f"Consumer {consumer_uuid} generation mismatch: "
-                    f"expected {consumer_generation}, "
-                    f"got {consumer.get('generation', 0)}."
+                raise errors.ConsumerGenerationConflict(
+                    "Consumer %s generation mismatch: "
+                    "expected %s, got %s."
+                    % (consumer_uuid, consumer_generation,
+                       consumer.get("generation", 0))
                 )
 
             # Handle project/user associations
@@ -156,9 +163,9 @@ def put_allocations(consumer_uuid: str) -> tuple[Response, int]:
                     ).single()
 
                     if not inv_check:
-                        raise NotFound(
-                            f"Inventory for {rc_name} not found on "
-                            f"resource provider {rp_uuid}."
+                        raise errors.NotFound(
+                            "Inventory for %s not found on "
+                            "resource provider %s." % (rc_name, rp_uuid)
                         )
 
                     tx.run(
@@ -189,16 +196,20 @@ def put_allocations(consumer_uuid: str) -> tuple[Response, int]:
             ).single()
 
             tx.commit()
-        except Exception:
+        except (ValueError, TypeError, RuntimeError):
             tx.rollback()
             raise
 
-    return jsonify({"consumer_generation": updated["generation"]}), 200
+    return flask.jsonify({"consumer_generation": updated["generation"]}), 200
 
 
 @bp.route("/allocations/<string:consumer_uuid>", methods=["DELETE"])
-def delete_allocations(consumer_uuid: str) -> Response:
-    """Delete all allocations for a consumer."""
+def delete_allocations(consumer_uuid):
+    """Delete all allocations for a consumer.
+
+    :param consumer_uuid: Consumer UUID
+    :returns: Response with status 204
+    """
     with _driver().session() as session:
         # Check if consumer exists
         consumer = session.run(
@@ -207,7 +218,7 @@ def delete_allocations(consumer_uuid: str) -> Response:
         ).single()
 
         if not consumer:
-            raise NotFound(f"Consumer {consumer_uuid} not found.")
+            raise errors.NotFound("Consumer %s not found." % consumer_uuid)
 
         session.run(
             """
@@ -217,12 +228,16 @@ def delete_allocations(consumer_uuid: str) -> Response:
             uuid=consumer_uuid,
         )
 
-    return Response(status=204)
+    return flask.Response(status=204)
 
 
 @bp.route("/resource_providers/<string:rp_uuid>/allocations", methods=["GET"])
-def get_provider_allocations(rp_uuid: str) -> tuple[Response, int]:
-    """Get all allocations against a resource provider."""
+def get_provider_allocations(rp_uuid):
+    """Get all allocations against a resource provider.
+
+    :param rp_uuid: Resource provider UUID
+    :returns: Tuple of (response, status_code)
+    """
     with _driver().session() as session:
         # Check provider exists
         provider = session.run(
@@ -231,7 +246,9 @@ def get_provider_allocations(rp_uuid: str) -> tuple[Response, int]:
         ).single()
 
         if not provider:
-            raise NotFound(f"Resource provider {rp_uuid} not found.")
+            raise errors.NotFound(
+                "Resource provider %s not found." % rp_uuid
+            )
 
         res = session.run(
             """
@@ -247,7 +264,7 @@ def get_provider_allocations(rp_uuid: str) -> tuple[Response, int]:
             uuid=rp_uuid,
         )
 
-        allocations: dict = defaultdict(lambda: {"resources": {}})
+        allocations = collections.defaultdict(lambda: {"resources": {}})
         for row in res:
             if row["consumer_uuid"] and row["resource_class"]:
                 allocations[row["consumer_uuid"]]["resources"][
@@ -257,9 +274,7 @@ def get_provider_allocations(rp_uuid: str) -> tuple[Response, int]:
                     "consumer_generation"
                 ]
 
-    return jsonify(
-        {
-            "allocations": dict(allocations),
-            "resource_provider_generation": provider["rp"].get("generation", 0),
-        }
-    ), 200
+    return flask.jsonify({
+        "allocations": dict(allocations),
+        "resource_provider_generation": provider["rp"].get("generation", 0),
+    }), 200
