@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 import flask
+
 from oslo_log import log
 
 LOG = log.getLogger(__name__)

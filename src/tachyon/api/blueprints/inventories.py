@@ -7,20 +7,24 @@ Implements Placement-compatible inventory management for ResourceProviders.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint
+from flask import Response
+from flask import g
+from flask import jsonify
+from flask import request
 from neo4j.time import DateTime
+
 from oslo_log import log
 
-from tachyon.api.errors import (
-    BadRequest,
-    Conflict,
-    InventoryInUse,
-    NotFound,
-    ResourceProviderGenerationConflict,
-)
+from tachyon.api.errors import BadRequest
+from tachyon.api.errors import Conflict
+from tachyon.api.errors import InventoryInUse
+from tachyon.api.errors import NotFound
+from tachyon.api.errors import ResourceProviderGenerationConflict
 from tachyon.api.microversion import Microversion
 
 LOG = log.getLogger(__name__)

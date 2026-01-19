@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Generator
+import contextlib
 from typing import Any
 
 import neo4j
+
 from oslo_log import log
 
 LOG = log.getLogger(__name__)

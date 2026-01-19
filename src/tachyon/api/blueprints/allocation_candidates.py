@@ -11,9 +11,11 @@ import datetime
 from typing import Any
 
 import flask
+
 from oslo_log import log
 
-from tachyon.api import errors, microversion
+from tachyon.api import errors
+from tachyon.api import microversion
 
 LOG = log.getLogger(__name__)
 
