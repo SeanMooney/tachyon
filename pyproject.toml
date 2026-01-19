@@ -1,5 +1,8 @@
 [build-system]
-requires = ["pbr>=6.0.0", "setuptools>=64.0.0"]
+requires = [
+    "pbr>=6.0.0",
+    "setuptools>=64.0.0",
+]
 build-backend = "pbr.build"
 
 [project]
@@ -7,10 +10,11 @@ name = "tachyon"
 description = "Neo4j-backed scheduling and Placement-compatible API (MVP)"
 readme = "README.rst"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
-dynamic = ["version"]
+dynamic = [
+    "version",
+]
 authors = [
-  {name = "OpenStack", email = "openstack-discuss@lists.openstack.org"},
+    { name = "OpenStack", email = "openstack-discuss@lists.openstack.org" },
 ]
 classifiers = [
     "Environment :: OpenStack",
@@ -24,6 +28,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 
+[project.license]
+text = "Apache-2.0"
+
 [project.urls]
 Homepage = "https://opendev.org/openstack/tachyon"
 
@@ -32,7 +39,9 @@ tachyon-api = "tachyon.cmd.api:main"
 tachyon-manage = "tachyon.cmd.manage:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = [
+    "src",
+]
 
 # stestr configuration
 [tool.stestr]
@@ -43,7 +52,9 @@ group_regex = "tachyon_tests\\.functional\\.test_api(?:\\.|_)([^_]+)"
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["src/tachyon"]
+source = [
+    "src/tachyon",
+]
 parallel = true
 branch = true
 omit = [
@@ -88,9 +99,37 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["tachyon"]
+known-first-party = [
+    "tachyon",
+]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "openstack-third-party",
+    "first-party",
+]
+default-section = "third-party"
+order-by-type = true
+from-first = false
+force-sort-within-sections = true
+force-single-line = true
+combine-as-imports = false
 
-# Mypy configuration (strict mode)
+[tool.ruff.lint.isort.sections]
+openstack-third-party = [
+    "hacking",
+    "keystonemiddleware",
+    "microversion_parse",
+    "oslo_config",
+    "oslo_context",
+    "oslo_log",
+    "oslo_middleware",
+    "oslo_policy",
+    "oslo_utils",
+    "oslotest",
+    "stevedore",
+]
 [tool.mypy]
 python_version = "3.10"
 mypy_path = "src"

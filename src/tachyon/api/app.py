@@ -7,21 +7,22 @@ from __future__ import annotations
 from typing import Any
 
 import flask
+
 from oslo_log import log
 
-from tachyon.api import errors, middleware
-from tachyon.api.blueprints import (
-    aggregates,
-    allocation_candidates,
-    allocations,
-    inventories,
-    resource_classes,
-    resource_providers,
-    root,
-    traits,
-    usages,
-)
-from tachyon.db import neo4j_api, schema
+from tachyon.api import errors
+from tachyon.api import middleware
+from tachyon.api.blueprints import aggregates
+from tachyon.api.blueprints import allocation_candidates
+from tachyon.api.blueprints import allocations
+from tachyon.api.blueprints import inventories
+from tachyon.api.blueprints import resource_classes
+from tachyon.api.blueprints import resource_providers
+from tachyon.api.blueprints import root
+from tachyon.api.blueprints import traits
+from tachyon.api.blueprints import usages
+from tachyon.db import neo4j_api
+from tachyon.db import schema
 
 LOG = log.getLogger(__name__)
 

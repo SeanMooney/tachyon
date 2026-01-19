@@ -6,7 +6,8 @@ from unittest import mock
 
 from oslotest import base
 
-from tachyon.api import app, microversion
+from tachyon.api import app
+from tachyon.api import microversion
 
 
 class TestMiddleware(base.BaseTestCase):

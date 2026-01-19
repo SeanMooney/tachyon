@@ -8,13 +8,16 @@ Implements Placement-compatible CRUD operations for ResourceProvider nodes.
 from __future__ import annotations
 
 import datetime
+from typing import Any
+from typing import NoReturn
 import uuid as uuid_module
-from typing import Any, NoReturn
 
 import flask
+
 from oslo_log import log
 
-from tachyon.api import errors, microversion
+from tachyon.api import errors
+from tachyon.api import microversion
 
 LOG = log.getLogger(__name__)
 

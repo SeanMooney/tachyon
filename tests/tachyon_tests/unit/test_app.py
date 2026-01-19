@@ -6,7 +6,8 @@ from unittest import mock
 
 from oslotest import base
 
-from tachyon.api import app, errors
+from tachyon.api import app
+from tachyon.api import errors
 from tachyon.db import schema
 
 
