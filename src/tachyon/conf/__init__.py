@@ -28,11 +28,6 @@ api_opts: list[cfg.Opt] = [
         min=1,
         help="Maximum number of items returned in a single response.",
     ),
-    cfg.BoolOpt(
-        "auto_apply_schema",
-        default=True,
-        help="Automatically apply Neo4j schema on startup.",
-    ),
 ]
 
 neo4j_opts: list[cfg.Opt] = [

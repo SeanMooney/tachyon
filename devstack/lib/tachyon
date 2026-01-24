@@ -1,0 +1,376 @@
+#!/bin/bash
+#
+# lib/tachyon - DevStack library functions for Tachyon
+#
+# Functions to control the configuration and operation of Tachyon
+# and its Neo4j database dependency.
+#
+# Dependencies:
+# - functions file from DevStack
+# - DEST, STACK_USER must be defined
+#
+# The following functions are provided:
+#
+# Neo4j functions:
+# - install_neo4j
+# - configure_neo4j
+# - start_neo4j
+# - stop_neo4j
+# - cleanup_neo4j
+#
+# Tachyon functions:
+# - install_tachyon
+# - configure_tachyon
+# - init_tachyon
+# - create_tachyon_accounts
+# - start_tachyon
+# - stop_tachyon
+# - cleanup_tachyon
+
+# Save trace setting
+_XTRACE_LIB_TACHYON=$(set +o | grep xtrace)
+set +o xtrace
+
+# Defaults
+TACHYON_BIN_DIR=$(get_python_exec_prefix)
+
+# =============================================================================
+# Neo4j Service Functions
+# =============================================================================
+
+# install_neo4j() - Install Neo4j database
+function install_neo4j {
+    echo_summary "Installing Neo4j $NEO4J_VERSION"
+
+    if is_ubuntu; then
+        # Ensure gnupg is installed for key management
+        if ! command -v gpg &> /dev/null; then
+            install_package gnupg
+        fi
+
+        # Download and install Neo4j GPG key
+        local keyring="/usr/share/keyrings/neo4j.gpg"
+        sudo rm -f "$keyring"
+        wget -q -O - https://debian.neo4j.com/neotechnology.gpg.key | \
+            sudo gpg --batch --yes --dearmor -o "$keyring"
+
+        # Add Neo4j repository
+        echo "deb [signed-by=$keyring] https://debian.neo4j.com stable $NEO4J_VERSION" | \
+            sudo tee /etc/apt/sources.list.d/neo4j.list
+
+        apt_get_update
+        install_package neo4j
+
+    elif is_fedora; then
+        # Add Neo4j RPM repository
+        sudo rpm --import https://debian.neo4j.com/neotechnology.gpg.key
+        cat <<EOF | sudo tee /etc/yum.repos.d/neo4j.repo
+[neo4j]
+name=Neo4j RPM Repository
+baseurl=https://yum.neo4j.com/stable/$NEO4J_VERSION
+enabled=1
+gpgcheck=1
+gpgkey=https://debian.neo4j.com/neotechnology.gpg.key
+EOF
+        install_package neo4j
+    else
+        die $LINENO "Unsupported distribution for Neo4j installation"
+    fi
+}
+
+# configure_neo4j() - Configure Neo4j database
+function configure_neo4j {
+    echo_summary "Configuring Neo4j"
+
+    # Set initial password (must be done before first start)
+    # This command may fail if password was already set, so we ignore errors
+    sudo neo4j-admin dbms set-initial-password "$NEO4J_PASSWORD" 2>/dev/null || true
+
+    # Ensure bolt connector is enabled and listening
+    sudo sed -i 's/#server.bolt.enabled=true/server.bolt.enabled=true/' /etc/neo4j/neo4j.conf
+    sudo sed -i 's/#server.bolt.listen_address=:7687/server.bolt.listen_address=:7687/' /etc/neo4j/neo4j.conf
+
+    # Ensure HTTP connector is enabled (for browser access during development)
+    sudo sed -i 's/#server.http.enabled=true/server.http.enabled=true/' /etc/neo4j/neo4j.conf
+    sudo sed -i 's/#server.http.listen_address=:7474/server.http.listen_address=:7474/' /etc/neo4j/neo4j.conf
+
+    # Set memory settings for development (can be overridden)
+    if ! grep -q "server.memory.heap.initial_size" /etc/neo4j/neo4j.conf; then
+        echo "server.memory.heap.initial_size=512m" | sudo tee -a /etc/neo4j/neo4j.conf
+    fi
+    if ! grep -q "server.memory.heap.max_size" /etc/neo4j/neo4j.conf; then
+        echo "server.memory.heap.max_size=1G" | sudo tee -a /etc/neo4j/neo4j.conf
+    fi
+}
+
+# start_neo4j() - Start Neo4j service
+function start_neo4j {
+    echo_summary "Starting Neo4j"
+
+    start_service neo4j
+
+    # Wait for Neo4j to be ready (bolt port)
+    echo "Waiting for Neo4j to start..."
+    if ! timeout 60 bash -c "until nc -z localhost 7687; do sleep 1; done"; then
+        die $LINENO "Neo4j failed to start within 60 seconds"
+    fi
+
+    echo_summary "Neo4j is ready on bolt://localhost:7687"
+}
+
+# stop_neo4j() - Stop Neo4j service
+function stop_neo4j {
+    echo_summary "Stopping Neo4j"
+    stop_service neo4j
+}
+
+# cleanup_neo4j() - Remove Neo4j and its data
+function cleanup_neo4j {
+    echo_summary "Cleaning up Neo4j"
+
+    # Stop service first
+    stop_neo4j || true
+
+    if is_ubuntu; then
+        uninstall_package neo4j || true
+        sudo rm -f /etc/apt/sources.list.d/neo4j.list
+        sudo rm -f /usr/share/keyrings/neo4j.gpg
+        # Only update if we removed the repo
+        if [[ ! -f /etc/apt/sources.list.d/neo4j.list ]]; then
+            apt_get_update || true
+        fi
+    elif is_fedora; then
+        uninstall_package neo4j || true
+        sudo rm -f /etc/yum.repos.d/neo4j.repo
+    fi
+
+    # Remove data and logs
+    sudo rm -rf /var/lib/neo4j
+    sudo rm -rf /var/log/neo4j
+    sudo rm -rf /etc/neo4j
+}
+
+# =============================================================================
+# Tachyon Service Functions
+# =============================================================================
+
+# install_tachyon() - Install Tachyon from source
+function install_tachyon {
+    echo_summary "Installing Tachyon"
+
+    # Clone repository if needed
+    git_clone $TACHYON_REPO $TACHYON_DIR $TACHYON_BRANCH
+
+    # Install in development mode
+    setup_develop $TACHYON_DIR
+}
+
+# configure_tachyon() - Configure Tachyon service
+function configure_tachyon {
+    echo_summary "Configuring Tachyon"
+
+    # Create configuration directory
+    sudo install -d -o $STACK_USER $TACHYON_CONF_DIR
+
+    # Create main configuration file
+    rm -f $TACHYON_CONF
+
+    # [DEFAULT] section
+    iniset $TACHYON_CONF DEFAULT debug $TACHYON_DEBUG
+
+    # [api] section
+    iniset $TACHYON_CONF api auth_strategy $TACHYON_AUTH_STRATEGY
+    iniset $TACHYON_CONF api max_limit 1000
+
+    # [neo4j] section
+    iniset $TACHYON_CONF neo4j uri $NEO4J_URI
+    iniset $TACHYON_CONF neo4j username $NEO4J_USERNAME
+    iniset $TACHYON_CONF neo4j password $NEO4J_PASSWORD
+
+    # Configure Keystone auth token middleware if using keystone
+    if [[ "$TACHYON_AUTH_STRATEGY" == "keystone" ]]; then
+        configure_keystone_authtoken_middleware $TACHYON_CONF tachyon
+    fi
+
+    # Setup logging
+    setup_logging $TACHYON_CONF
+
+    # Configure uWSGI for WSGI deployment
+    # Use /placement path since Tachyon replaces the Placement service
+    write_uwsgi_config "$TACHYON_UWSGI_CONF" "$TACHYON_UWSGI" "/placement" "" "tachyon-api"
+}
+
+# init_tachyon() - Initialize Tachyon database schema
+function init_tachyon {
+    echo_summary "Initializing Tachyon"
+
+    # Clear existing data to ensure clean state (removes data from prior deployments)
+    # This is only appropriate for development environments (devstack)
+    # Use Python with neo4j driver (already installed) instead of cypher-shell
+    # which has packaging issues in some Neo4j installations
+    # Must use Python from Tachyon's environment where neo4j package is installed
+    echo "Clearing Tachyon database..."
+    $TACHYON_BIN_DIR/python3 -c "
+from neo4j import GraphDatabase
+driver = GraphDatabase.driver('$NEO4J_URI', auth=('$NEO4J_USERNAME', '$NEO4J_PASSWORD'))
+with driver.session() as session:
+    session.run('MATCH (n) DETACH DELETE n')
+driver.close()
+print('Database cleared successfully')
+"
+
+    # Apply Neo4j schema before starting uWSGI workers
+    # This prevents deadlocks from concurrent schema application
+    echo "Applying Tachyon database schema..."
+    $TACHYON_BIN_DIR/tachyon-manage db sync
+}
+
+# create_tachyon_accounts() - Create Keystone accounts for Tachyon
+#
+# Tachyon registers as the "placement" service type to be a drop-in
+# replacement for the original Placement service.
+function create_tachyon_accounts {
+    echo_summary "Creating Tachyon Keystone accounts"
+
+    # Create service user named "tachyon" with admin role
+    create_service_user "tachyon" "admin"
+
+    # Build the service URL
+    local tachyon_api_url="$TACHYON_SERVICE_PROTOCOL://$TACHYON_SERVICE_HOST/placement"
+
+    # Register as "placement" service type - this replaces the original Placement service
+    # This allows Nova and other services to discover Tachyon via the standard
+    # "placement" service type without any configuration changes.
+    get_or_create_service "placement" "placement" "Placement Service"
+    get_or_create_endpoint "placement" "$REGION_NAME" "$tachyon_api_url"
+}
+
+# start_tachyon() - Start Tachyon API service
+function start_tachyon {
+    echo_summary "Starting Tachyon API"
+
+    # Check if Neo4j is available (warn if not, but don't fail - might be external)
+    if is_service_enabled neo4j; then
+        if ! nc -z localhost 7687 2>/dev/null; then
+            warn $LINENO "Neo4j does not appear to be running on localhost:7687"
+        fi
+    elif ! nc -z localhost 7687 2>/dev/null; then
+        warn $LINENO "neo4j service not enabled and Neo4j not reachable on localhost:7687"
+        warn $LINENO "Tachyon requires Neo4j - ensure it is available at $NEO4J_URI"
+    fi
+
+    # Start the API using uwsgi
+    run_process "tachyon-api" "$(which uwsgi) --procname-prefix tachyon --ini $TACHYON_UWSGI_CONF"
+
+    # Wait for the API to be ready
+    echo "Waiting for Tachyon API to start..."
+    if ! wait_for_service $SERVICE_TIMEOUT "$TACHYON_SERVICE_PROTOCOL://$TACHYON_SERVICE_HOST/placement"; then
+        die $LINENO "Tachyon API did not start"
+    fi
+
+    # Validate the API is returning correct microversion response
+    echo "Validating Tachyon API endpoint..."
+    local max_retries=10
+    local retry_interval=2
+    local attempt=1
+    local response
+
+    while [ $attempt -le $max_retries ]; do
+        response=$(curl -s "$TACHYON_SERVICE_PROTOCOL://$TACHYON_SERVICE_HOST/placement" 2>/dev/null)
+
+        if echo "$response" | grep -q '"max_version"' && \
+           echo "$response" | grep -q '"min_version"'; then
+            echo_summary "Tachyon API validated: microversion endpoint working"
+            echo_summary "Tachyon API is ready at $TACHYON_SERVICE_PROTOCOL://$TACHYON_SERVICE_HOST/placement"
+            return 0
+        fi
+
+        echo "Validation attempt $attempt/$max_retries failed, retrying in ${retry_interval}s..."
+        sleep $retry_interval
+        attempt=$((attempt + 1))
+    done
+
+    die $LINENO "Tachyon API validation failed after $max_retries attempts: microversion response not found"
+}
+
+# stop_tachyon() - Stop Tachyon API service
+function stop_tachyon {
+    echo_summary "Stopping Tachyon API"
+    stop_process "tachyon-api"
+}
+
+# cleanup_tachyon() - Remove Tachyon configuration and state
+function cleanup_tachyon {
+    echo_summary "Cleaning up Tachyon"
+
+    # Stop service first
+    stop_tachyon || true
+
+    # Remove uwsgi config and Apache site
+    remove_uwsgi_config "$TACHYON_UWSGI_CONF" "tachyon-api"
+
+    # Remove configuration directory
+    sudo rm -rf $TACHYON_CONF_DIR
+}
+
+# =============================================================================
+# Placement Function Overrides
+# =============================================================================
+# Tachyon replaces the Placement service. Override the placement functions
+# so that when DevStack calls them, Tachyon is started instead.
+# This ensures Tachyon starts at the exact same point in the stack.sh flow
+# where placement would normally start (after Keystone, before Nova).
+
+if is_service_enabled tachyon-api; then
+    # Override configure_placement to skip creating placement Apache/uWSGI configs
+    # Tachyon has its own configuration created by configure_tachyon
+    function configure_placement {
+        echo_summary "Skipping placement configuration (replaced by Tachyon)"
+        # Remove any existing placement Apache site config to avoid conflicts
+        # The placement-api.conf would create a ProxyPass for /placement that
+        # conflicts with tachyon-api.conf's ProxyPass for the same path
+        if [[ -f /etc/apache2/sites-enabled/placement-api.conf ]]; then
+            echo "Removing conflicting placement-api Apache config"
+            sudo rm -f /etc/apache2/sites-enabled/placement-api.conf
+            sudo rm -f /etc/apache2/sites-available/placement-api.conf
+        fi
+        # Remove stale placement socket if it exists
+        sudo rm -f /var/run/uwsgi/placement-api.socket
+    }
+
+    # Override init_placement to initialize Tachyon
+    function init_placement {
+        echo_summary "Initializing Tachyon (placement replacement)"
+        # Start Neo4j first if enabled (must be running before init_tachyon)
+        if is_service_enabled neo4j; then
+            start_neo4j
+        fi
+        init_tachyon
+    }
+
+    # Override start_placement to start Tachyon
+    function start_placement {
+        echo_summary "Starting Tachyon API (placement replacement)"
+        start_tachyon
+    }
+
+    # Override stop_placement to stop Tachyon
+    function stop_placement {
+        echo_summary "Stopping Tachyon API"
+        stop_tachyon
+    }
+
+    # Override cleanup_placement to cleanup Tachyon
+    function cleanup_placement {
+        echo_summary "Cleaning up Tachyon"
+        cleanup_tachyon
+    }
+fi
+
+# Restore xtrace
+$_XTRACE_LIB_TACHYON
+
+# Tell emacs to use shell-script-mode
+## Local variables:
+## mode: shell-script
+## End:

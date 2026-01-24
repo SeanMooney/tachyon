@@ -9,8 +9,11 @@ the design in design/05-operations/indexes-constraints.md.
 
 from __future__ import annotations
 
+import random
+import time
 from typing import Any
 
+from neo4j.exceptions import TransientError
 from oslo_log import log
 
 LOG = log.getLogger(__name__)
@@ -70,14 +73,35 @@ INDEXES: list[str] = [
 SCHEMA_STATEMENTS: list[str] = UNIQUENESS_CONSTRAINTS + EXISTENCE_CONSTRAINTS + INDEXES
 
 
-def apply_schema(session: Any) -> None:
-    """Apply all schema constraints and indexes.
+def apply_schema(session: Any, max_retries: int = 3) -> None:
+    """Apply all schema constraints and indexes with retry logic.
 
     :param session: Neo4j session to execute statements against
+    :param max_retries: Maximum number of retry attempts on transient errors
     :note: Uses IF NOT EXISTS to make this idempotent.
+    :raises TransientError: If schema application fails after all retries
     """
-    LOG.debug("Applying %d schema statements", len(SCHEMA_STATEMENTS))
-    for statement in SCHEMA_STATEMENTS:
-        LOG.debug("Executing schema statement: %s", statement[:60])
-        session.run(statement)
-    LOG.info("Schema applied successfully")
+    for attempt in range(max_retries):
+        try:
+            LOG.debug("Applying %d schema statements", len(SCHEMA_STATEMENTS))
+            for statement in SCHEMA_STATEMENTS:
+                LOG.debug("Executing schema statement: %s", statement[:60])
+                session.run(statement)
+            LOG.info("Schema applied successfully")
+            return
+        except TransientError as e:
+            if attempt < max_retries - 1:
+                # Exponential backoff with jitter
+                wait_time = (2**attempt) + random.uniform(0, 1)
+                LOG.warning(
+                    "Schema apply attempt %d/%d failed (transient error), "
+                    "retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_retries,
+                    wait_time,
+                    e,
+                )
+                time.sleep(wait_time)
+            else:
+                LOG.error("Schema apply failed after %d attempts", max_retries)
+                raise

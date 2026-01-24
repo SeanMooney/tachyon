@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# devstack/settings - DevStack plugin settings for Tachyon
+#
+# This file is sourced by DevStack to configure the Tachyon plugin.
+# Services are NOT enabled by default - users must explicitly enable them.
+
+# Plugin definition
+define_plugin tachyon
+
+# NOTE: Services are NOT enabled by default.
+# Users must explicitly enable them in local.conf:
+#   enable_service neo4j
+#   enable_service tachyon-api
+
+# When tachyon-api is enabled, Tachyon replaces the Placement service.
+# We keep the placement service enabled so that DevStack calls start_placement,
+# but we override the placement functions in lib/tachyon to start Tachyon instead.
+# This ensures Tachyon starts at the correct point in the stack.sh flow
+# (after Keystone, before Nova).
+
+# Repository settings
+TACHYON_DIR=${TACHYON_DIR:-$DEST/tachyon}
+TACHYON_REPO=${TACHYON_REPO:-${GIT_BASE}/openstack/tachyon.git}
+TACHYON_BRANCH=${TACHYON_BRANCH:-master}
+
+# Configuration paths
+TACHYON_CONF_DIR=${TACHYON_CONF_DIR:-/etc/tachyon}
+TACHYON_CONF=$TACHYON_CONF_DIR/tachyon.conf
+TACHYON_UWSGI_CONF=$TACHYON_CONF_DIR/tachyon-uwsgi.ini
+TACHYON_UWSGI=tachyon.wsgi.api:application
+
+# Service settings
+TACHYON_SERVICE_HOST=${TACHYON_SERVICE_HOST:-$SERVICE_HOST}
+TACHYON_SERVICE_PROTOCOL=${TACHYON_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
+
+# Enable TLS if proxy is enabled
+if is_service_enabled tls-proxy; then
+    TACHYON_SERVICE_PROTOCOL="https"
+fi
+
+# Neo4j settings
+NEO4J_URI=${NEO4J_URI:-bolt://localhost:7687}
+NEO4J_USERNAME=${NEO4J_USERNAME:-neo4j}
+NEO4J_PASSWORD=${NEO4J_PASSWORD:-tachyon_password}
+NEO4J_VERSION=${NEO4J_VERSION:-5}
+
+# Auth strategy (keystone or noauth2)
+TACHYON_AUTH_STRATEGY=${TACHYON_AUTH_STRATEGY:-keystone}
+
+# Debug settings
+TACHYON_DEBUG=${TACHYON_DEBUG:-True}

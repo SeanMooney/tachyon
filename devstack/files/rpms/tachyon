@@ -1,0 +1,10 @@
+# RHEL/CentOS/Fedora package dependencies for Tachyon
+#
+# Java runtime is required for Neo4j
+java-21-openjdk-headless
+
+# nmap-ncat for connectivity checks
+nmap-ncat
+
+# GPG for repository key management
+gnupg2

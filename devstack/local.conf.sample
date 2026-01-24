@@ -1,0 +1,87 @@
+# Sample local.conf for DevStack with Tachyon
+#
+# This configuration deploys a minimal OpenStack with Tachyon replacing
+# the Placement service. Copy this file to your DevStack directory as
+# local.conf and customize as needed.
+#
+# Usage:
+#   cp /path/to/tachyon/devstack/local.conf.sample ~/devstack/local.conf
+#   cd ~/devstack
+#   ./stack.sh
+
+[[local|localrc]]
+# =============================================================================
+# Tachyon Plugin Configuration
+# =============================================================================
+
+# Enable the Tachyon DevStack plugin
+enable_plugin tachyon https://opendev.org/openstack/tachyon
+
+# Enable Tachyon services (required - services are NOT enabled by default)
+# neo4j: Graph database backend for Tachyon
+# tachyon-api: Tachyon API service (replaces Placement)
+enable_service neo4j
+enable_service tachyon-api
+
+# NOTE: Enabling tachyon-api automatically disables placement-api
+# since Tachyon is a drop-in replacement for Placement. Nova and other
+# services will use Tachyon via the standard "placement" service type.
+
+# =============================================================================
+# Optional: Customize Tachyon/Neo4j Settings
+# =============================================================================
+
+# Neo4j password (default: tachyon_password)
+# NEO4J_PASSWORD=my_secure_password
+
+# Neo4j version to install (default: 5)
+# NEO4J_VERSION=5
+
+# Neo4j connection URI (default: bolt://localhost:7687)
+# NEO4J_URI=bolt://localhost:7687
+
+# Tachyon authentication strategy (default: keystone)
+# Options: keystone, noauth2
+# TACHYON_AUTH_STRATEGY=keystone
+
+# Enable debug logging (default: True)
+# TACHYON_DEBUG=True
+
+# =============================================================================
+# Standard DevStack Configuration
+# =============================================================================
+
+# Passwords - set these to your preferred values
+ADMIN_PASSWORD=secret
+DATABASE_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+
+# Host configuration
+# HOST_IP=127.0.0.1
+
+# Logging
+LOGFILE=$DEST/logs/stack.sh.log
+LOGDAYS=2
+
+# =============================================================================
+# Optional: Minimal Service Set
+# =============================================================================
+
+# Uncomment below for a minimal deployment focused on Tachyon development
+# This disables services not strictly needed for testing Tachyon
+
+# disable_service tempest
+# disable_service horizon
+
+# =============================================================================
+# Optional: Using External Neo4j
+# =============================================================================
+
+# If you have an existing Neo4j instance, you can disable the neo4j service
+# and point Tachyon to your external database:
+#
+# disable_service neo4j
+# NEO4J_URI=bolt://your-neo4j-host:7687
+# NEO4J_USERNAME=neo4j
+# NEO4J_PASSWORD=your_password
