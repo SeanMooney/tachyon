@@ -16,6 +16,7 @@ from oslo_log import log
 
 from tachyon.api import errors
 from tachyon.api import microversion
+from tachyon.policies import allocation_candidate as ac_policies
 
 LOG = log.getLogger(__name__)
 
@@ -312,6 +313,7 @@ def list_allocation_candidates() -> tuple[flask.Response, int]:
 
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(ac_policies.LIST)
     mv = _mv()
 
     # Allocation candidates requires microversion >= 1.10

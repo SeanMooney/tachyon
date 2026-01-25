@@ -14,6 +14,7 @@ import flask
 from oslo_log import log
 
 from tachyon.api import errors
+from tachyon.policies import usage as usage_policies
 
 LOG = log.getLogger(__name__)
 
@@ -40,6 +41,8 @@ def provider_usages(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(usage_policies.PROVIDER_USAGES)
+
     with _driver().session() as session:
         # Check provider exists
         provider = session.run(
@@ -78,6 +81,7 @@ def project_usages() -> tuple[flask.Response, int]:
         project_id: Required. Project ID to get usages for.
 
     Returns the sum of allocations for all consumers owned by the project.
+    Project owners can view their own project's usages.
 
     :returns: Tuple of (response, status_code)
     """
@@ -85,6 +89,9 @@ def project_usages() -> tuple[flask.Response, int]:
 
     if not project_id:
         raise errors.BadRequest("'project_id' is a required query parameter.")
+
+    # Check policy with project_id as target for project-level access
+    flask.g.context.can(usage_policies.TOTAL_USAGES, target={"project_id": project_id})
 
     with _driver().session() as session:
         rows = session.run(

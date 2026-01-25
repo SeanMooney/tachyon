@@ -11,6 +11,7 @@ from oslo_log import log
 
 from tachyon.api import errors
 from tachyon.api import microversion
+from tachyon import context as tachyon_context
 
 LOG = log.getLogger(__name__)
 
@@ -44,12 +45,26 @@ def register(app: flask.Flask) -> None:
 
     @app.before_request
     def _set_context() -> None:
-        """Set minimal request context placeholder."""
-        flask.g.context = {
-            "user_id": flask.request.headers.get("X-User-Id"),
-            "project_id": flask.request.headers.get("X-Project-Id"),
-            "roles": flask.request.headers.get("X-Roles", "").split(","),
-        }
+        """Set request context from WSGI environ or create from headers.
+
+        The auth middleware (TachyonKeystoneContext) places the context in
+        the WSGI environ as 'tachyon.context'. If running without the WSGI
+        middleware stack (e.g., Flask dev server), create the context from
+        request headers.
+        """
+        # Try to get context from WSGI environ (set by auth middleware)
+        ctx = flask.request.environ.get("tachyon.context")
+
+        if ctx is None:
+            # Create context from request headers (Flask dev server case)
+            # This is primarily for development/testing
+            ctx = tachyon_context.RequestContext(
+                user_id=flask.request.headers.get("X-User-Id"),
+                project_id=flask.request.headers.get("X-Project-Id"),
+                roles=flask.request.headers.get("X-Roles", "").split(","),
+            )
+
+        flask.g.context = ctx
 
     @app.before_request
     def _set_microversion() -> None:

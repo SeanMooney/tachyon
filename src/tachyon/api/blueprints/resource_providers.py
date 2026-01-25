@@ -18,6 +18,7 @@ from oslo_log import log
 
 from tachyon.api import errors
 from tachyon.api import microversion
+from tachyon.policies import resource_provider as rp_policies
 
 LOG = log.getLogger(__name__)
 
@@ -63,18 +64,6 @@ def _abs_url(path: str) -> str:
     """
     base = flask.request.host_url.rstrip("/")
     return "%s%s" % (base, path)
-
-
-def _require_admin() -> None:
-    """Enforce a simple admin token check for now.
-
-    :raises errors.Forbidden: If admin token not provided
-    """
-    token = flask.request.headers.get("x-auth-token") or flask.request.headers.get(
-        "X-Auth-Token"
-    )
-    if token != "admin":
-        raise errors.Forbidden("Admin role required.")
 
 
 def _validate_uuid(value: str, field: str) -> str:
@@ -382,7 +371,7 @@ def list_resource_providers() -> tuple[flask.Response, int]:
 
     :returns: Tuple of (response, status_code)
     """
-    _require_admin()
+    flask.g.context.can(rp_policies.LIST)
     mv = _mv()
 
     allowed_params = {"name", "uuid", "in_tree", "member_of", "required", "resources"}
@@ -516,7 +505,7 @@ def create_resource_provider() -> tuple[flask.Response, int]:
 
     :returns: Tuple of (response, status_code)
     """
-    _require_admin()
+    flask.g.context.can(rp_policies.CREATE)
     mv = _mv()
 
     try:
@@ -623,7 +612,7 @@ def get_resource_provider(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
-    _require_admin()
+    flask.g.context.can(rp_policies.SHOW)
     mv = _mv()
     try:
         rp_uuid = _validate_uuid(rp_uuid, "uuid")
@@ -674,7 +663,7 @@ def update_resource_provider(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
-    _require_admin()
+    flask.g.context.can(rp_policies.UPDATE)
     mv = _mv()
     rp_uuid = _validate_uuid(rp_uuid, "uuid")
 
@@ -873,7 +862,7 @@ def delete_resource_provider(rp_uuid: str) -> flask.Response:
     :param rp_uuid: Resource provider UUID
     :returns: Response with status 204
     """
-    _require_admin()
+    flask.g.context.can(rp_policies.DELETE)
     with _driver().session() as session:
         # Check if provider exists
         exists = session.run(

@@ -14,6 +14,7 @@ import flask
 from oslo_log import log
 
 from tachyon.api import errors
+from tachyon.policies import trait as trait_policies
 
 LOG = log.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def list_traits() -> tuple[flask.Response, int]:
 
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(trait_policies.LIST)
     name_filter = flask.request.args.get("name")
     associated = flask.request.args.get("associated", "").lower() == "true"
 
@@ -79,6 +81,7 @@ def create_trait(name: str) -> flask.Response:
     :param name: Trait name
     :returns: Response with status 204
     """
+    flask.g.context.can(trait_policies.UPDATE)
     # Validate trait name format
     if not name.startswith("CUSTOM_") and not name.isupper():
         raise errors.BadRequest(
@@ -106,6 +109,7 @@ def get_trait(name: str) -> tuple[flask.Response, int]:
     :param name: Trait name
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(trait_policies.SHOW)
     with _driver().session() as session:
         res = session.run("MATCH (t:Trait {name: $name}) RETURN t", name=name).single()
 
@@ -124,6 +128,7 @@ def delete_trait(name: str) -> flask.Response:
     :param name: Trait name
     :returns: Response with status 204
     """
+    flask.g.context.can(trait_policies.DELETE)
     with _driver().session() as session:
         # Check if trait exists
         exists = session.run(
@@ -165,6 +170,7 @@ def get_provider_traits(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(trait_policies.RP_TRAIT_LIST)
     with _driver().session() as session:
         res = session.run(
             """
@@ -201,6 +207,7 @@ def put_provider_traits(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(trait_policies.RP_TRAIT_UPDATE)
     data = flask.request.get_json(force=True, silent=True) or {}
     generation = data.get("resource_provider_generation")
     traits: list[str] = data.get("traits", [])
@@ -283,6 +290,7 @@ def delete_provider_traits(rp_uuid: str) -> flask.Response:
     :param rp_uuid: Resource provider UUID
     :returns: Response with status 204
     """
+    flask.g.context.can(trait_policies.RP_TRAIT_DELETE)
     with _driver().session() as session:
         provider = session.run(
             "MATCH (rp:ResourceProvider {uuid: $uuid}) RETURN rp",

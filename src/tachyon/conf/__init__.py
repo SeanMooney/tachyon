@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from keystonemiddleware import opts as ks_opts
 from oslo_config import cfg
 from oslo_log import log
 
@@ -49,6 +50,8 @@ def register_opts(conf: cfg.ConfigOpts) -> None:
     LOG.debug("Registering configuration options")
     conf.register_opts(api_opts, group="api")
     conf.register_opts(neo4j_opts, group="neo4j")
+    # Note: keystone_authtoken options are registered by keystonemiddleware
+    # when the middleware is initialized, not here
 
 
 def list_opts() -> list[tuple[str, list[Any]]]:
@@ -58,10 +61,13 @@ def list_opts() -> list[tuple[str, list[Any]]]:
 
     :returns: List of (group_name, options) tuples
     """
-    return [
+    opts = [
         ("api", api_opts),
         ("neo4j", neo4j_opts),
     ]
+    # Add keystone_authtoken options for documentation
+    opts.extend(ks_opts.list_opts())
+    return opts
 
 
 # Register options on module import for convenience

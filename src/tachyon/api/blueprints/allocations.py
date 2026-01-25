@@ -15,6 +15,7 @@ import flask
 from oslo_log import log
 
 from tachyon.api import errors
+from tachyon.policies import allocation as alloc_policies
 
 LOG = log.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def get_allocations(consumer_uuid: str) -> tuple[flask.Response, int]:
     :param consumer_uuid: Consumer UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(alloc_policies.LIST)
     with _driver().session() as session:
         res = session.run(
             """
@@ -84,6 +86,7 @@ def put_allocations(consumer_uuid: str) -> tuple[flask.Response, int]:
     :param consumer_uuid: Consumer UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(alloc_policies.UPDATE)
     body = flask.request.get_json(force=True, silent=True) or {}
     allocations = body.get("allocations") or {}
     consumer_generation = body.get("consumer_generation")
@@ -219,6 +222,7 @@ def delete_allocations(consumer_uuid: str) -> flask.Response:
     :param consumer_uuid: Consumer UUID
     :returns: Response with status 204
     """
+    flask.g.context.can(alloc_policies.DELETE)
     with _driver().session() as session:
         # Check if consumer exists
         consumer = session.run(
@@ -247,6 +251,7 @@ def get_provider_allocations(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(alloc_policies.LIST)
     with _driver().session() as session:
         # Check provider exists
         provider = session.run(

@@ -14,6 +14,7 @@ import flask
 from oslo_log import log
 
 from tachyon.api import errors
+from tachyon.policies import resource_class as rc_policies
 
 LOG = log.getLogger(__name__)
 
@@ -67,6 +68,7 @@ def list_resource_classes() -> tuple[flask.Response, int]:
 
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(rc_policies.LIST)
     with _driver().session() as session:
         rows = session.run(
             "MATCH (rc:ResourceClass) RETURN rc.name AS name ORDER BY name"
@@ -86,6 +88,7 @@ def create_resource_class(name: str) -> flask.Response:
     :param name: Resource class name
     :returns: Response with status 204
     """
+    flask.g.context.can(rc_policies.UPDATE)
     # Validate name format
     if not name.isupper():
         raise errors.BadRequest("Resource class name '%s' must be uppercase." % name)
@@ -116,6 +119,7 @@ def get_resource_class(name: str) -> tuple[flask.Response, int]:
     :param name: Resource class name
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(rc_policies.SHOW)
     with _driver().session() as session:
         result = session.run(
             "MATCH (rc:ResourceClass {name: $name}) RETURN rc",
@@ -138,6 +142,7 @@ def delete_resource_class(name: str) -> flask.Response:
     :param name: Resource class name
     :returns: Response with status 204
     """
+    flask.g.context.can(rc_policies.DELETE)
     with _driver().session() as session:
         # First check if exists (Placement API expects 404 for nonexistent)
         exists = session.run(
