@@ -144,6 +144,27 @@ class Forbidden(TachyonException):
     title = "Forbidden"
 
 
+class PolicyNotAuthorized(Forbidden):
+    """Policy authorization failure (403).
+
+    Raised when a policy check fails for the requested action.
+
+    :Usage:
+        raise PolicyNotAuthorized(action="placement:resource_providers:list")
+    """
+
+    msg_fmt = "Policy doesn't allow %(action)s to be performed."
+
+    def __init__(self, action: str, **kwargs: Any) -> None:
+        """Initialize PolicyNotAuthorized.
+
+        :param action: The policy action that was denied
+        :param kwargs: Additional keyword arguments
+        """
+        kwargs["action"] = action
+        super().__init__(**kwargs)
+
+
 class BadRequest(TachyonException):
     """Invalid request (400).
 
@@ -287,6 +308,9 @@ def register_handlers(app: flask.Flask) -> None:
 
     :param app: Flask application instance
     """
+    # Import here to avoid circular imports
+    from tachyon import policy
+
     LOG.debug("Registering error handlers")
 
     @app.errorhandler(TachyonException)
@@ -294,6 +318,15 @@ def register_handlers(app: flask.Flask) -> None:
         """Handle TachyonException subclasses."""
         LOG.debug("Handling %s: %s", type(error).__name__, error.detail)
         return error.to_response()
+
+    @app.errorhandler(policy.PolicyNotAuthorized)
+    def handle_policy_error(
+        error: policy.PolicyNotAuthorized,
+    ) -> tuple[flask.Response, int]:
+        """Handle policy authorization failures."""
+        LOG.debug("Policy not authorized: %s", error.action)
+        api_error = PolicyNotAuthorized(action=error.action)
+        return api_error.to_response()
 
     @app.errorhandler(404)
     def not_found(error: Exception) -> tuple[flask.Response, int]:

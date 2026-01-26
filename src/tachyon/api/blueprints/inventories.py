@@ -26,6 +26,7 @@ from tachyon.api.errors import InventoryInUse
 from tachyon.api.errors import NotFound
 from tachyon.api.errors import ResourceProviderGenerationConflict
 from tachyon.api.microversion import Microversion
+from tachyon.policies import inventory as inv_policies
 
 LOG = log.getLogger(__name__)
 
@@ -247,6 +248,7 @@ def _serialize_for_json(value: Any) -> Any:
 @bp.route("", methods=["GET"])
 def list_inventories(uuid: str) -> tuple[Response, int]:
     """List all inventories for a resource provider."""
+    g.context.can(inv_policies.LIST)
     mv = _mv()
     with _driver().session() as session:
         res = session.run(
@@ -288,6 +290,7 @@ def replace_inventories(uuid: str) -> tuple[Response, int]:
         resource_provider_generation: Required. Current generation.
         inventories: Dict mapping resource class names to inventory objects.
     """
+    g.context.can(inv_policies.UPDATE)
     mv = _mv()
     try:
         data = request.get_json(force=True, silent=False) or {}
@@ -394,6 +397,7 @@ def replace_inventories(uuid: str) -> tuple[Response, int]:
 @bp.route("/<string:rc_name>", methods=["GET"])
 def get_inventory(uuid: str, rc_name: str) -> tuple[Response, int]:
     """Get a specific inventory by resource class."""
+    g.context.can(inv_policies.SHOW)
     mv = _mv()
     with _driver().session() as session:
         res = session.run(
@@ -424,6 +428,7 @@ def get_inventory(uuid: str, rc_name: str) -> tuple[Response, int]:
 @bp.route("", methods=["POST"])
 def create_inventory(uuid: str) -> tuple[Response, int]:
     """Create a single inventory record."""
+    g.context.can(inv_policies.CREATE)
     mv = _mv()
     try:
         data = request.get_json(force=True, silent=False) or {}
@@ -513,6 +518,7 @@ def create_inventory(uuid: str) -> tuple[Response, int]:
 @bp.route("/<string:rc_name>", methods=["PUT"])
 def put_inventory(uuid: str, rc_name: str) -> tuple[Response, int]:
     """Update a specific inventory (must already exist)."""
+    g.context.can(inv_policies.UPDATE)
     mv = _mv()
     try:
         data = request.get_json(force=True, silent=False) or {}
@@ -631,6 +637,7 @@ def delete_inventory(uuid: str, rc_name: str) -> Response:
 
     Will fail if the inventory has active allocations.
     """
+    g.context.can(inv_policies.DELETE)
     with _driver().session() as session:
         # Check for allocations first
         has_allocs = session.run(
@@ -683,6 +690,7 @@ def delete_inventory(uuid: str, rc_name: str) -> Response:
 @bp.route("", methods=["DELETE"])
 def delete_all_inventories(uuid: str) -> Response:
     """Delete all inventories for a resource provider (microversion >=1.5)."""
+    g.context.can(inv_policies.DELETE_ALL)
     mv = _mv()
     if mv.minor < 5:
         return Response(status=405)

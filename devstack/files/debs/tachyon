@@ -1,0 +1,10 @@
+# Debian/Ubuntu package dependencies for Tachyon
+#
+# Java runtime is required for Neo4j
+openjdk-21-jdk-headless
+
+# netcat for connectivity checks
+netcat-openbsd
+
+# GPG for repository key management
+gnupg

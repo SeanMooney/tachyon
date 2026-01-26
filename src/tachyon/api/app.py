@@ -22,7 +22,6 @@ from tachyon.api.blueprints import root
 from tachyon.api.blueprints import traits
 from tachyon.api.blueprints import usages
 from tachyon.db import neo4j_api
-from tachyon.db import schema
 
 LOG = log.getLogger(__name__)
 
@@ -42,7 +41,6 @@ def create_app(config: dict[str, Any] | None = None) -> flask.Flask:
     app.config.setdefault("NEO4J_URI", "bolt://localhost:7687")
     app.config.setdefault("NEO4J_USERNAME", "neo4j")
     app.config.setdefault("NEO4J_PASSWORD", "password")
-    app.config.setdefault("AUTO_APPLY_SCHEMA", True)
     app.config.setdefault("SKIP_DB_INIT", False)
 
     if config:
@@ -74,7 +72,10 @@ def create_app(config: dict[str, Any] | None = None) -> flask.Flask:
 
 
 def _init_neo4j(app: flask.Flask) -> None:
-    """Initialize Neo4j driver and apply schema.
+    """Initialize Neo4j driver.
+
+    Schema should be applied separately via 'tachyon-manage db sync' CLI
+    or test fixtures.
 
     :param app: Flask application instance
     """
@@ -85,11 +86,6 @@ def _init_neo4j(app: flask.Flask) -> None:
         app.config.get("NEO4J_PASSWORD"),
     )
     app.extensions["neo4j_driver"] = driver
-
-    if app.config.get("AUTO_APPLY_SCHEMA", True):
-        LOG.debug("Applying database schema")
-        with driver.session() as session:
-            schema.apply_schema(session)
     LOG.info("Neo4j driver initialized")
 
 

@@ -17,6 +17,7 @@ from oslo_log import log
 
 from tachyon.api import errors
 from tachyon.api import microversion
+from tachyon.policies import aggregate as agg_policies
 
 LOG = log.getLogger(__name__)
 
@@ -95,6 +96,7 @@ def get_aggregates(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(agg_policies.LIST)
     mv = _mv()
 
     # Aggregates API requires microversion >= 1.1
@@ -142,6 +144,7 @@ def put_aggregates(rp_uuid: str) -> tuple[flask.Response, int]:
     :param rp_uuid: Resource provider UUID
     :returns: Tuple of (response, status_code)
     """
+    flask.g.context.can(agg_policies.UPDATE)
     mv = _mv()
 
     # Aggregates API requires microversion >= 1.1
