@@ -1,0 +1,122 @@
+# Tests for microversion 1.12 - dict-style allocations and generation per-provider
+# Port of Placement's allocations-1-12.yaml
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        content-type: application/json
+        openstack-api-version: placement 1.12
+
+tests:
+
+# Setup - create provider and inventory first
+- name: create the resource provider
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 201
+
+- name: set some inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          DISK_GB:
+            total: 2048
+            min_unit: 10
+            max_unit: 1024
+          VCPU:
+            total: 96
+  status: 200
+
+# Dict-style allocation format (1.12+)
+- name: put an allocation dictish
+  PUT: /allocations/a0b15655-273a-4b3d-9792-2e579b7d5ad9
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                VCPU: 1
+                DISK_GB: 20
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+  status: 204
+
+# Get allocation and verify dict-style response with generation per-provider
+- name: get that allocation has generation per provider
+  GET: /allocations/a0b15655-273a-4b3d-9792-2e579b7d5ad9
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+      $.allocations["$ENVIRON['RP_UUID']"].resources.DISK_GB: 20
+      # Verify generation is present (1.12+ should include it)
+      $.allocations["$ENVIRON['RP_UUID']"].generation: 1
+      # project_id and user_id should be in response at 1.12+
+      $.project_id: $ENVIRON['PROJECT_ID']
+      $.user_id: $ENVIRON['USER_ID']
+
+# Verify we can PUT the allocation back using the response format
+- name: put that same allocation back
+  PUT: /allocations/a0b15655-273a-4b3d-9792-2e579b7d5ad9
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                VCPU: 2
+                DISK_GB: 30
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+  status: 204
+
+# Verify the update
+- name: verify allocation was updated
+  GET: /allocations/a0b15655-273a-4b3d-9792-2e579b7d5ad9
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 2
+      $.allocations["$ENVIRON['RP_UUID']"].resources.DISK_GB: 30
+
+# Test with multiple providers
+- name: create second resource provider
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME1']
+      uuid: $ENVIRON['RP_UUID1']
+  status: 201
+
+- name: set inventory on second provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          MEMORY_MB:
+            total: 16384
+  status: 200
+
+- name: put allocation on multiple providers
+  PUT: /allocations/b0b15655-273a-4b3d-9792-2e579b7d5ad9
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                VCPU: 4
+          $ENVIRON['RP_UUID1']:
+              resources:
+                MEMORY_MB: 1024
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+  status: 204
+
+- name: get allocation on multiple providers has generation for each
+  GET: /allocations/b0b15655-273a-4b3d-9792-2e579b7d5ad9
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 4
+      $.allocations["$ENVIRON['RP_UUID']"].generation: 1
+      $.allocations["$ENVIRON['RP_UUID1']"].resources.MEMORY_MB: 1024
+      $.allocations["$ENVIRON['RP_UUID1']"].generation: 1

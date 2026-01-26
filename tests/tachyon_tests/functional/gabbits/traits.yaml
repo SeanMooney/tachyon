@@ -17,13 +17,19 @@ tests:
   response_json_paths:
     $.traits: []
 
-- name: create custom trait
+- name: create custom trait returns 201 for new
+  PUT: /traits/CUSTOM_FAST
+  status: 201
+  response_headers:
+    location: /traits/CUSTOM_FAST
+
+- name: create same trait again returns 204
   PUT: /traits/CUSTOM_FAST
   status: 204
 
 - name: create another trait
   PUT: /traits/CUSTOM_GPU
-  status: 204
+  status: 201
 
 - name: list traits
   GET: /traits
@@ -31,18 +37,23 @@ tests:
   response_json_paths:
     $.traits.`len`: 2
 
-- name: list traits with name filter
-  GET: /traits?name=CUSTOM_F
+- name: list traits with startswith filter
+  GET: /traits?name=startswith:CUSTOM_F
   status: 200
   response_json_paths:
     $.traits.`len`: 1
     $.traits[0]: CUSTOM_FAST
 
-- name: get trait
-  GET: /traits/CUSTOM_FAST
+- name: list traits with in filter
+  GET: /traits?name=in:CUSTOM_FAST,CUSTOM_GPU
   status: 200
   response_json_paths:
-    $.name: CUSTOM_FAST
+    $.traits.`len`: 2
+
+- name: get trait returns 204
+  desc: GET /traits/{name} returns 204 with empty body per Placement API spec
+  GET: /traits/CUSTOM_FAST
+  status: 204
 
 - name: get nonexistent trait
   GET: /traits/NONEXISTENT

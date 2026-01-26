@@ -1,0 +1,199 @@
+# Tests for granular resource requests at microversion 1.25+
+# Simplified port of Placement's granular.yaml
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        content-type: application/json
+        accept: application/json
+        openstack-api-version: placement 1.25
+
+tests:
+
+# Setup: Create providers with different resource classes
+- name: create compute provider 1
+  POST: /resource_providers
+  data:
+      name: compute1
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set inventory on compute 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 4096
+          DISK_GB:
+            total: 1000
+  status: 200
+
+- name: create compute provider 2
+  POST: /resource_providers
+  data:
+      name: compute2
+      uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: set inventory on compute 2
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 4096
+          DISK_GB:
+            total: 500
+  status: 200
+
+# Create a shared disk provider
+- name: create aggregate for sharing
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.10
+  data:
+      - 7fade9e1-ab01-4d1b-84db-ac74f740bb42
+  status: 200
+
+- name: put compute 2 in aggregate
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.10
+  data:
+      - 7fade9e1-ab01-4d1b-84db-ac74f740bb42
+  status: 200
+
+- name: create shared disk provider
+  POST: /resource_providers
+  data:
+      name: shared_disk
+      uuid: $ENVIRON['RP_UUID2']
+  status: 200
+
+- name: set sharing trait on disk provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/traits
+  data:
+      resource_provider_generation: 0
+      traits:
+          - MISC_SHARES_VIA_AGGREGATE
+  status: 200
+
+- name: put shared disk in aggregate
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.10
+  data:
+      - 7fade9e1-ab01-4d1b-84db-ac74f740bb42
+  status: 200
+
+- name: set large disk inventory on shared provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  data:
+      resource_provider_generation: 1
+      inventories:
+          DISK_GB:
+            total: 5000
+  status: 200
+
+# Basic granular request tests
+
+- name: numbered group combines with unnumbered
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:2,MEMORY_MB:512
+      resources1: VCPU:1,MEMORY_MB:1024
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Should combine: 3 VCPU, 1536 MB total
+      $.allocation_requests.`len`: 2
+
+- name: group policy not required with only one numbered group
+  GET: /allocation_candidates?resources=VCPU:1&resources1=MEMORY_MB:2048
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+
+- name: group_policy isolate with different groups
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1,MEMORY_MB:1024
+      resources2: DISK_GB:100
+      group_policy: isolate
+  status: 200
+  # With isolate policy, VCPU/MEM must come from different provider than DISK
+  # The shared disk provider can satisfy disk, compute providers do vcpu/mem
+
+- name: group_policy none with different groups
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1,MEMORY_MB:1024
+      resources2: DISK_GB:100
+      group_policy: none
+  status: 200
+  # With none policy, providers can satisfy any group
+  # So we get more combinations (compute providers can satisfy all)
+
+# Test required with numbered groups
+- name: create trait on compute 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - COMPUTE_NET_VIF_MODEL_VIRTIO
+  status: 200
+
+- name: required in numbered group filters results
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1
+      required1: COMPUTE_NET_VIF_MODEL_VIRTIO
+      group_policy: none
+  status: 200
+  # Only compute1 has the trait
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+
+# Test member_of with numbered groups
+- name: member_of in numbered group
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1
+      member_of1: 7fade9e1-ab01-4d1b-84db-ac74f740bb42
+      group_policy: none
+  status: 200
+  # Both compute providers are in the aggregate
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+
+# Test forbidden traits (1.22+)
+- name: forbidden trait excludes provider
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.22
+  query_parameters:
+      resources: VCPU:1
+      required: "!COMPUTE_NET_VIF_MODEL_VIRTIO"
+  status: 200
+  # Only compute2 doesn't have the trait
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+
+# Test that alphanumeric suffixes work (1.33+)
+- name: alphanumeric suffix works
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.33
+  query_parameters:
+      resources_COMPUTE: VCPU:1,MEMORY_MB:1024
+      resources_STORAGE: DISK_GB:100
+      group_policy: none
+  status: 200

@@ -1,0 +1,214 @@
+fixtures:
+  - APIFixture
+
+defaults:
+  request_headers:
+    x-auth-token: admin
+    accept: application/json
+    openstack-api-version: placement latest
+
+tests:
+
+# --- Setup ---
+
+- name: setup provider
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID']
+    name: consumer-deletion-rp
+  status: 200
+
+- name: setup inventories
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 0
+    inventories:
+      VCPU:
+        total: 8
+      MEMORY_MB:
+        total: 16384
+  status: 200
+
+# --- Test PUT with empty allocations deletes consumer ---
+
+- name: create consumer with allocations
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 2
+          MEMORY_MB: 1024
+  status: 204
+
+- name: verify consumer exists with generation 1
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+    $.consumer_generation: 1
+
+- name: clear allocations with PUT empty dict
+  desc: PUT with empty allocations should delete the consumer (Placement behavior)
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: 1
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations: {}
+  status: 204
+
+- name: verify consumer deleted - get returns empty without consumer_generation
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+    $.allocations: {}
+
+- name: verify consumer can be recreated with null generation
+  desc: After consumer deletion, consumer_generation null should succeed
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 1
+  status: 204
+
+- name: verify recreated consumer has generation 1
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+    $.consumer_generation: 1
+
+# --- Test POST /allocations with empty allocations deletes consumer ---
+
+- name: setup second provider for POST test
+  POST: /resource_providers
+  request_headers:
+    content-type: application/json
+  data:
+    uuid: $ENVIRON['RP_UUID2']
+    name: consumer-deletion-rp2
+  status: 200
+
+- name: setup second provider inventories
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  request_headers:
+    content-type: application/json
+  data:
+    resource_provider_generation: 0
+    inventories:
+      VCPU:
+        total: 8
+      MEMORY_MB:
+        total: 16384
+  status: 200
+
+- name: create two consumers for POST test
+  desc: Create consumer1 and consumer2 with allocations
+  POST: /allocations
+  request_headers:
+    content-type: application/json
+  data:
+    $ENVIRON['CONSUMER_UUID1']:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations:
+        $ENVIRON['RP_UUID']:
+          resources:
+            VCPU: 1
+    $ENVIRON['CONSUMER_UUID2']:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations:
+        $ENVIRON['RP_UUID2']:
+          resources:
+            VCPU: 1
+  status: 204
+
+- name: verify consumer1 exists with generation 1
+  GET: /allocations/$ENVIRON['CONSUMER_UUID1']
+  status: 200
+  response_json_paths:
+    $.consumer_generation: 1
+
+- name: verify consumer2 exists with generation 1
+  GET: /allocations/$ENVIRON['CONSUMER_UUID2']
+  status: 200
+  response_json_paths:
+    $.consumer_generation: 1
+
+- name: POST clears consumer1 but keeps consumer2
+  desc: consumer1 gets empty allocations (should be deleted), consumer2 gets updated
+  POST: /allocations
+  request_headers:
+    content-type: application/json
+  data:
+    $ENVIRON['CONSUMER_UUID1']:
+      consumer_generation: 1
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations: {}
+    $ENVIRON['CONSUMER_UUID2']:
+      consumer_generation: 1
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations:
+        $ENVIRON['RP_UUID2']:
+          resources:
+            VCPU: 2
+  status: 204
+
+- name: verify consumer1 was deleted
+  desc: consumer1 should be deleted after receiving empty allocations
+  GET: /allocations/$ENVIRON['CONSUMER_UUID1']
+  status: 200
+  response_json_paths:
+    $.allocations: {}
+
+- name: verify consumer1 can be recreated with null generation
+  desc: After deletion, consumer_generation null should succeed
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID1']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 1
+  status: 204
+
+- name: verify consumer2 still exists with generation 2
+  desc: consumer2 should have been updated (not deleted) with generation incremented
+  GET: /allocations/$ENVIRON['CONSUMER_UUID2']
+  status: 200
+  response_json_paths:
+    $.consumer_generation: 2

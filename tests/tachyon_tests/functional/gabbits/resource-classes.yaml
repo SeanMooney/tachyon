@@ -21,11 +21,11 @@ tests:
 
 - name: create custom resource class
   PUT: /resource_classes/CUSTOM_DISK
-  status: 204
+  status: 201
 
 - name: create another custom resource class
   PUT: /resource_classes/CUSTOM_ACCELERATOR
-  status: 204
+  status: 201
 
 # --- Get ---
 
@@ -49,15 +49,15 @@ tests:
   response_json_paths:
     $.resource_classes.`len`: 2
 
-# --- Create Standard Resource Class ---
+# --- Standard Resource Classes ---
+# Standard resource classes like VCPU cannot be created via PUT
+# They may be auto-created when used in inventory, or not exposed
 
-- name: create standard resource class VCPU
+- name: creating standard resource class via PUT fails
   PUT: /resource_classes/VCPU
-  status: 204
-
-- name: verify VCPU exists
-  GET: /resource_classes/VCPU
-  status: 200
+  status: 400
+  response_strings:
+    - "'name' value must start with 'CUSTOM_'"
 
 # --- Delete ---
 
@@ -72,3 +72,37 @@ tests:
 - name: delete nonexistent resource class
   DELETE: /resource_classes/NONEXISTENT
   status: 404
+
+# --- Bodiless PUT tests at 1.7+ ---
+
+- name: create new custom class with put returns 201
+  PUT: /resource_classes/CUSTOM_COW
+  request_headers:
+    openstack-api-version: placement 1.7
+  status: 201
+  response_headers:
+    location: //resource_classes/CUSTOM_COW/
+
+- name: put existing custom class returns 204
+  PUT: /resource_classes/CUSTOM_COW
+  request_headers:
+    openstack-api-version: placement 1.7
+  status: 204
+  response_headers:
+    location: //resource_classes/CUSTOM_COW/
+
+- name: fail to put non custom class
+  PUT: /resource_classes/COW
+  request_headers:
+    openstack-api-version: placement 1.7
+  status: 400
+  response_strings:
+    - "'name' value must start with 'CUSTOM_'"
+
+- name: fail to put standard class via PUT
+  PUT: /resource_classes/MEMORY_MB
+  request_headers:
+    openstack-api-version: placement 1.7
+  status: 400
+  response_strings:
+    - "'name' value must start with 'CUSTOM_'"

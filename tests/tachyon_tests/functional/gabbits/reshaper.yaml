@@ -1,0 +1,225 @@
+# /reshaper provides a way to atomically move inventory and allocations from
+# one resource provider to another, often from a root provider to a new child.
+# Port of Placement's reshaper.yaml
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        content-type: application/json
+        openstack-api-version: placement 1.30
+
+tests:
+
+# Setup - create resource provider with inventory
+- name: create resource provider
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          DISK_GB:
+            total: 2048
+            step_size: 10
+            min_unit: 10
+            max_unit: 1200
+          VCPU:
+            total: 24
+  status: 200
+
+# Basic reshaper tests
+
+- name: reshaper not there at 1.29
+  POST: /reshaper
+  request_headers:
+      openstack-api-version: placement 1.29
+  status: 404
+
+- name: reshaper requires inventories
+  POST: /reshaper
+  data:
+      allocations: {}
+  status: 400
+  response_strings:
+      - "'inventories' is a required field"
+
+# Test bad resource provider generation
+
+- name: bad rp gen conflict
+  POST: /reshaper
+  data:
+      inventories:
+          $ENVIRON['RP_UUID']:
+              resource_provider_generation: 0
+              inventories:
+                  VCPU:
+                      total: 10
+      allocations: {}
+  status: 409
+  response_strings:
+      - resource provider generation conflict
+
+# Test successful reshape
+
+- name: reshape succeeds
+  POST: /reshaper
+  data:
+      inventories:
+          $ENVIRON['RP_UUID']:
+              resource_provider_generation: 1
+              inventories:
+                  DISK_GB:
+                      total: 2048
+                  VCPU:
+                      total: 12
+      allocations: {}
+  status: 204
+
+# Verify the inventory was updated
+
+- name: verify inventory after reshape
+  GET: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  status: 200
+  response_json_paths:
+      $.inventories.VCPU.total: 12
+      $.inventories.DISK_GB.total: 2048
+
+# Test reshape with allocations
+
+- name: reshape with new consumer allocation
+  POST: /reshaper
+  data:
+      inventories:
+          $ENVIRON['RP_UUID']:
+              resource_provider_generation: 2
+              inventories:
+                  DISK_GB:
+                      total: 2048
+                  VCPU:
+                      total: 12
+      allocations:
+          $ENVIRON['CONSUMER_UUID']:
+              allocations:
+                  $ENVIRON['RP_UUID']:
+                      resources:
+                          VCPU: 4
+                          DISK_GB: 100
+              project_id: $ENVIRON['PROJECT_ID']
+              user_id: $ENVIRON['USER_ID']
+              consumer_generation: null
+  status: 204
+
+# Verify the allocation was created
+
+- name: verify allocation after reshape
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 4
+      $.allocations["$ENVIRON['RP_UUID']"].resources.DISK_GB: 100
+
+# Test consumer generation conflict
+
+- name: bad consumer gen conflict
+  POST: /reshaper
+  data:
+      inventories:
+          $ENVIRON['RP_UUID']:
+              resource_provider_generation: 3
+              inventories:
+                  DISK_GB:
+                      total: 2048
+                  VCPU:
+                      total: 12
+      allocations:
+          $ENVIRON['CONSUMER_UUID']:
+              allocations:
+                  $ENVIRON['RP_UUID']:
+                      resources:
+                          VCPU: 8
+              project_id: $ENVIRON['PROJECT_ID']
+              user_id: $ENVIRON['USER_ID']
+              # Wrong generation - should be 1
+              consumer_generation: 99
+  status: 409
+  response_strings:
+      - generation mismatch
+
+# Create a child provider for move tests
+
+- name: create child provider
+  POST: /resource_providers
+  data:
+      uuid: $ENVIRON['RP_UUID1']
+      name: $ENVIRON['RP_NAME1']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+# Move VCPU inventory and allocations to child
+
+- name: move vcpu to child
+  POST: /reshaper
+  data:
+      inventories:
+          $ENVIRON['RP_UUID']:
+              resource_provider_generation: 3
+              inventories:
+                  DISK_GB:
+                      total: 2048
+          $ENVIRON['RP_UUID1']:
+              resource_provider_generation: 0
+              inventories:
+                  VCPU:
+                      total: 12
+      allocations:
+          $ENVIRON['CONSUMER_UUID']:
+              allocations:
+                  $ENVIRON['RP_UUID']:
+                      resources:
+                          DISK_GB: 100
+                  $ENVIRON['RP_UUID1']:
+                      resources:
+                          VCPU: 4
+              project_id: $ENVIRON['PROJECT_ID']
+              user_id: $ENVIRON['USER_ID']
+              consumer_generation: 1
+  status: 204
+
+# Verify allocations were moved
+
+- name: verify allocation on parent
+  GET: /resource_providers/$ENVIRON['RP_UUID']/usages
+  status: 200
+  response_json_paths:
+      $.usages.DISK_GB: 100
+
+- name: verify allocation on child
+  GET: /resource_providers/$ENVIRON['RP_UUID1']/usages
+  status: 200
+  response_json_paths:
+      $.usages.VCPU: 4
+
+# Test provider not found
+
+- name: provider not found
+  POST: /reshaper
+  data:
+      inventories:
+          00000000-0000-0000-0000-000000000000:
+              resource_provider_generation: 0
+              inventories:
+                  VCPU:
+                      total: 10
+      allocations: {}
+  status: 404
+  response_strings:
+      - No resource provider with uuid 00000000-0000-0000-0000-000000000000 found

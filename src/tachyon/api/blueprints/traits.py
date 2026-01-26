@@ -7,6 +7,8 @@ Implements Placement-compatible trait management.
 
 from __future__ import annotations
 
+import datetime
+import re
 from typing import Any
 
 import flask
@@ -14,6 +16,7 @@ import flask
 from oslo_log import log
 
 from tachyon.api import errors
+from tachyon.api import microversion
 from tachyon.policies import trait as trait_policies
 
 LOG = log.getLogger(__name__)
@@ -38,85 +41,236 @@ def _driver() -> Any:
     return app.get_driver()
 
 
+def _mv() -> microversion.Microversion:
+    """Return the parsed microversion from the request context.
+
+    :returns: Microversion instance
+    """
+    mv: microversion.Microversion | None = getattr(flask.g, "microversion", None)
+    if mv is None:
+        return microversion.Microversion(1, 0)
+    return mv
+
+
+def _httpdate(dt: datetime.datetime | None = None) -> str:
+    """Return an HTTP-date string.
+
+    :param dt: Optional datetime, defaults to now
+    :returns: HTTP-date formatted string
+    """
+    dt = dt or datetime.datetime.now(datetime.timezone.utc)
+    return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+
+def _normalize_traits_qs_param(qs: str) -> dict[str, Any]:
+    """Parse the name query parameter for trait filtering.
+
+    Supports formats:
+        name=in:TRAIT1,TRAIT2,... - Match any of the listed traits
+        name=startswith:PREFIX - Match traits starting with PREFIX
+
+    :param qs: Query string value
+    :returns: Dict with either 'name_in' or 'prefix' key
+    :raises errors.BadRequest: If format is invalid
+    """
+    try:
+        op, value = qs.split(":", 1)
+    except ValueError:
+        raise errors.BadRequest(
+            "Badly formatted name parameter. Expected name query string "
+            "parameter in form: "
+            "?name=[in|startswith]:[name1,name2|prefix]. Got: \"%s\"" % qs
+        )
+
+    filters: dict[str, Any] = {}
+    if op == "in":
+        filters["name_in"] = value.split(",")
+    elif op == "startswith":
+        filters["prefix"] = value
+    else:
+        raise errors.BadRequest(
+            "Badly formatted name parameter. Expected name query string "
+            "parameter in form: "
+            "?name=[in|startswith]:[name1,name2|prefix]. Got: \"%s\"" % qs
+        )
+
+    return filters
+
+
 @bp.route("", methods=["GET"])
 def list_traits() -> tuple[flask.Response, int]:
     """List all traits.
 
     Query Parameters:
-        name: Filter by name prefix (optional).
+        name: Filter by name. Supports formats:
+            - name=in:TRAIT1,TRAIT2 - Match any of the listed traits
+            - name=startswith:PREFIX - Match traits starting with PREFIX
         associated: If 'true', only return traits associated with providers.
 
     :returns: Tuple of (response, status_code)
     """
     flask.g.context.can(trait_policies.LIST)
+    mv = _mv()
     name_filter = flask.request.args.get("name")
-    associated = flask.request.args.get("associated", "").lower() == "true"
+    associated_param = flask.request.args.get("associated")
 
-    if associated:
-        cypher = """
-            MATCH (:ResourceProvider)-[:HAS_TRAIT]->(t:Trait)
-            WHERE ($name IS NULL OR t.name STARTS WITH $name)
-            RETURN DISTINCT t.name AS name ORDER BY name
-        """
+    # Validate associated parameter if provided
+    if associated_param is not None:
+        if associated_param.lower() not in ("true", "false"):
+            raise errors.BadRequest(
+                'The query parameter "associated" only accepts '
+                '"true" or "false"'
+            )
+        associated = associated_param.lower() == "true"
     else:
-        cypher = """
-            MATCH (t:Trait)
-            WHERE ($name IS NULL OR t.name STARTS WITH $name)
-            RETURN t.name AS name ORDER BY name
-        """
+        associated = False
 
+    # Parse name filter
+    name_in: list[str] | None = None
+    prefix: str | None = None
+
+    if name_filter:
+        filters = _normalize_traits_qs_param(name_filter)
+        name_in = filters.get("name_in")
+        prefix = filters.get("prefix")
+
+    # Build query based on filters
     with _driver().session() as session:
-        rows = session.run(cypher, name=name_filter)
+        if associated:
+            if name_in:
+                cypher = """
+                    MATCH (:ResourceProvider)-[:HAS_TRAIT]->(t:Trait)
+                    WHERE t.name IN $names
+                    RETURN DISTINCT t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher, names=name_in)
+            elif prefix:
+                cypher = """
+                    MATCH (:ResourceProvider)-[:HAS_TRAIT]->(t:Trait)
+                    WHERE t.name STARTS WITH $prefix
+                    RETURN DISTINCT t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher, prefix=prefix)
+            else:
+                cypher = """
+                    MATCH (:ResourceProvider)-[:HAS_TRAIT]->(t:Trait)
+                    RETURN DISTINCT t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher)
+        else:
+            if name_in:
+                cypher = """
+                    MATCH (t:Trait)
+                    WHERE t.name IN $names
+                    RETURN t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher, names=name_in)
+            elif prefix:
+                cypher = """
+                    MATCH (t:Trait)
+                    WHERE t.name STARTS WITH $prefix
+                    RETURN t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher, prefix=prefix)
+            else:
+                cypher = """
+                    MATCH (t:Trait)
+                    RETURN t.name AS name ORDER BY name
+                """
+                rows = session.run(cypher)
+
         names = [r["name"] for r in rows]
 
-    return flask.jsonify({"traits": names}), 200
+    resp = flask.jsonify({"traits": names})
+    if mv.is_at_least(15):
+        resp.headers["cache-control"] = "no-cache"
+        resp.headers["last-modified"] = _httpdate()
+    return resp, 200
 
 
 @bp.route("/<string:name>", methods=["PUT"])
 def create_trait(name: str) -> flask.Response:
-    """Create a trait.
+    """Create or verify existence of a trait.
 
-    Custom traits must start with 'CUSTOM_'.
+    Custom traits must start with 'CUSTOM_' and be all uppercase,
+    max 255 characters, containing only A-Z, 0-9, and _.
+
+    Returns:
+        201 if newly created
+        204 if already exists
+
+    :param name: Trait name
+    :returns: Response with status 201 or 204
+    """
+    flask.g.context.can(trait_policies.UPDATE)
+    mv = _mv()
+
+    # Validate trait name format - must start with CUSTOM_ and be valid format
+    if not re.match(r"^CUSTOM_[A-Z0-9_]+$", name):
+        raise errors.BadRequest(
+            "The trait is invalid. A valid trait must be no longer than "
+            '255 characters, start with the prefix "CUSTOM_" and use '
+            'following characters: "A"-"Z", "0"-"9" and "_"'
+        )
+
+    if len(name) > 255:
+        raise errors.BadRequest(
+            "The trait is invalid. A valid trait must be no longer than "
+            '255 characters, start with the prefix "CUSTOM_" and use '
+            'following characters: "A"-"Z", "0"-"9" and "_"'
+        )
+
+    with _driver().session() as session:
+        # Check if trait already exists
+        existing = session.run(
+            "MATCH (t:Trait {name: $name}) RETURN t", name=name
+        ).single()
+
+        if existing:
+            status = 204
+        else:
+            session.run(
+                """
+                CREATE (t:Trait {name: $name, created_at: datetime(), updated_at: datetime()})
+                """,
+                name=name,
+            )
+            status = 201
+
+    resp = flask.Response(status=status)
+    resp.headers.pop("Content-Type", None)
+    resp.headers["Location"] = "/traits/%s" % name
+    if mv.is_at_least(15):
+        resp.headers["last-modified"] = _httpdate()
+        resp.headers["cache-control"] = "no-cache"
+    return resp
+
+
+@bp.route("/<string:name>", methods=["GET"])
+def get_trait(name: str) -> flask.Response:
+    """Get a specific trait.
+
+    Returns 204 with empty body if trait exists, 404 if not found.
+    This matches Placement API behavior.
 
     :param name: Trait name
     :returns: Response with status 204
     """
-    flask.g.context.can(trait_policies.UPDATE)
-    # Validate trait name format
-    if not name.startswith("CUSTOM_") and not name.isupper():
-        raise errors.BadRequest(
-            "Trait name '%s' must be uppercase. "
-            "Custom traits must start with 'CUSTOM_'." % name
-        )
-
-    with _driver().session() as session:
-        session.run(
-            """
-            MERGE (t:Trait {name: $name})
-            ON CREATE SET t.created_at = datetime(), t.updated_at = datetime()
-            ON MATCH SET t.updated_at = datetime()
-            """,
-            name=name,
-        )
-
-    return flask.Response(status=204)
-
-
-@bp.route("/<string:name>", methods=["GET"])
-def get_trait(name: str) -> tuple[flask.Response, int]:
-    """Get a specific trait.
-
-    :param name: Trait name
-    :returns: Tuple of (response, status_code)
-    """
     flask.g.context.can(trait_policies.SHOW)
+    mv = _mv()
+
     with _driver().session() as session:
         res = session.run("MATCH (t:Trait {name: $name}) RETURN t", name=name).single()
 
         if not res:
-            raise errors.NotFound("Trait %s not found." % name)
+            raise errors.NotFound("No such trait(s): %s" % name)
 
-    return flask.jsonify({"name": name}), 200
+    resp = flask.Response(status=204)
+    resp.headers.pop("Content-Type", None)
+    if mv.is_at_least(15):
+        resp.headers["last-modified"] = _httpdate()
+        resp.headers["cache-control"] = "no-cache"
+    return resp
 
 
 @bp.route("/<string:name>", methods=["DELETE"])

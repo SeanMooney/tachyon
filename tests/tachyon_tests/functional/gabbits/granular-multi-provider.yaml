@@ -1,0 +1,351 @@
+# Tests for granular multi-provider allocation candidates
+# Tests multi-provider allocations, mappings, group_policy, and same_subtree
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        content-type: application/json
+        accept: application/json
+        openstack-api-version: placement 1.34
+
+tests:
+
+# Setup: Create a provider tree structure
+# compute_host (root)
+#   |- numa_node_0 (child with VCPU, MEMORY_MB)
+#   |    |- pf_0 (grandchild with SRIOV_NET_VF)
+#   |- numa_node_1 (child with VCPU, MEMORY_MB)
+#        |- pf_1 (grandchild with SRIOV_NET_VF)
+
+# Create the traits first
+- name: create NUMA_0 trait
+  PUT: /traits/CUSTOM_NUMA_0
+  status: 201
+
+- name: create NUMA_1 trait
+  PUT: /traits/CUSTOM_NUMA_1
+  status: 201
+
+- name: create PHYSNET_PUBLIC trait
+  PUT: /traits/CUSTOM_PHYSNET_PUBLIC
+  status: 201
+
+- name: create PHYSNET_PRIVATE trait
+  PUT: /traits/CUSTOM_PHYSNET_PRIVATE
+  status: 201
+
+# Create provider tree
+
+- name: create compute host
+  POST: /resource_providers
+  data:
+      name: compute_host
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create numa node 0
+  POST: /resource_providers
+  data:
+      name: numa_node_0
+      uuid: $ENVIRON['RP_UUID1']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create numa node 1
+  POST: /resource_providers
+  data:
+      name: numa_node_1
+      uuid: $ENVIRON['RP_UUID2']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create pf 0 under numa 0
+  POST: /resource_providers
+  data:
+      name: pf_0
+      uuid: $ENVIRON['RP_UUID3']
+      parent_provider_uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: create pf 1 under numa 1
+  POST: /resource_providers
+  data:
+      name: pf_1
+      uuid: $ENVIRON['RP_UUID4']
+      parent_provider_uuid: $ENVIRON['RP_UUID2']
+  status: 200
+
+# Set inventory on providers
+
+- name: set inventory on numa node 0
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 16384
+  status: 200
+
+- name: set inventory on numa node 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 16384
+  status: 200
+
+- name: set inventory on pf 0
+  PUT: /resource_providers/$ENVIRON['RP_UUID3']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          SRIOV_NET_VF:
+            total: 8
+  status: 200
+
+- name: set inventory on pf 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID4']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          SRIOV_NET_VF:
+            total: 8
+  status: 200
+
+# Set traits on providers
+
+- name: set trait on numa node 0
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_NUMA_0
+  status: 200
+
+- name: set trait on numa node 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_NUMA_1
+  status: 200
+
+- name: set trait on pf 0
+  PUT: /resource_providers/$ENVIRON['RP_UUID3']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_PHYSNET_PUBLIC
+  status: 200
+
+- name: set trait on pf 1
+  PUT: /resource_providers/$ENVIRON['RP_UUID4']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_PHYSNET_PRIVATE
+  status: 200
+
+# Test basic granular request with mappings
+
+- name: basic granular request with mappings
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:2,MEMORY_MB:2048
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Should get candidates from both numa nodes
+      $.allocation_requests.`len`: 2
+      # Check mappings are present (1.34+)
+      $.allocation_requests[0].mappings: /./
+
+- name: granular request with numbered groups
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:2,MEMORY_MB:2048
+      resources2: SRIOV_NET_VF:1
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Should find candidates
+      $.allocation_requests.`len`: /\d+/
+
+# Test group_policy=isolate
+
+- name: group_policy isolate returns different providers per numbered group
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:2
+      resources2: SRIOV_NET_VF:1
+      group_policy: isolate
+  status: 200
+  # With isolate, VCPU provider must be different from SRIOV provider
+  # numa_node_0 (VCPU) + pf_0 (VF) is valid
+  # numa_node_1 (VCPU) + pf_1 (VF) is valid
+
+# Test per-group trait filtering
+
+- name: per-group trait filter
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:2
+      required1: CUSTOM_NUMA_0
+      resources2: SRIOV_NET_VF:1
+      required2: CUSTOM_PHYSNET_PUBLIC
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Only numa_node_0 has CUSTOM_NUMA_0 and only pf_0 has CUSTOM_PHYSNET_PUBLIC
+      $.allocation_requests.`len`: 1
+
+- name: per-group trait filter no match
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:2
+      required1: CUSTOM_NUMA_0
+      resources2: SRIOV_NET_VF:1
+      required2: CUSTOM_PHYSNET_PRIVATE
+      group_policy: none
+  status: 200
+  # CUSTOM_NUMA_0 is on numa_node_0, but CUSTOM_PHYSNET_PRIVATE is on pf_1 (under numa_node_1)
+  # With group_policy=none, this should still work if providers can be from anywhere in tree
+
+# Test mappings format at 1.34
+
+- name: verify mappings format has correct structure
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:1
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Mappings should have empty string key for unnumbered group
+      $.allocation_requests[0].mappings."".`len`: 1
+
+- name: verify mappings not present before 1.34
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.33
+  query_parameters:
+      resources: VCPU:1
+      group_policy: none
+  status: 200
+  response_forbidden_headers:
+      - mappings
+
+# Test same_subtree at 1.36
+
+- name: same_subtree basic
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.36
+  query_parameters:
+      resources1: VCPU:2
+      resources2: SRIOV_NET_VF:1
+      same_subtree: _1,_2
+      group_policy: none
+  status: 200
+  # Groups 1 and 2 must share a common subtree
+  # numa_node_0 (VCPU) and pf_0 (VF) share numa_node_0 as ancestor
+  # numa_node_1 (VCPU) and pf_1 (VF) share numa_node_1 as ancestor
+
+- name: same_subtree requires microversion 1.36
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.35
+  query_parameters:
+      resources1: VCPU:2
+      same_subtree: _1
+      group_policy: none
+  status: 400
+  response_strings:
+      - same_subtree
+
+# Test combined group_policy=isolate with same_subtree
+
+- name: isolate with same_subtree
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.36
+  query_parameters:
+      resources1: VCPU:2
+      resources2: SRIOV_NET_VF:1
+      same_subtree: _1,_2
+      group_policy: isolate
+  status: 200
+  # Groups must use different providers (isolate) but share common ancestor (same_subtree)
+
+# Test provider summaries include full tree at 1.29
+
+- name: provider summaries include full tree
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.29
+  query_parameters:
+      resources: VCPU:1
+      group_policy: none
+  status: 200
+  response_json_paths:
+      # Should have parent_provider_uuid and root_provider_uuid in summaries
+      $.provider_summaries.*.parent_provider_uuid: /./
+      $.provider_summaries.*.root_provider_uuid: /./
+
+# Test alphanumeric suffixes at 1.33
+
+- name: alphanumeric suffixes work
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.33
+  query_parameters:
+      resources_COMPUTE: VCPU:2,MEMORY_MB:2048
+      resources_NETWORK: SRIOV_NET_VF:1
+      group_policy: none
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: /\d+/
+
+# Test validation errors
+
+- name: group_policy required with multiple numbered groups
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1
+      resources2: MEMORY_MB:1024
+  status: 400
+  # group_policy is required when there are multiple numbered resource groups
+  response_strings:
+      - group_policy
+      - required
+
+- name: invalid group_policy value
+  GET: /allocation_candidates
+  query_parameters:
+      resources1: VCPU:1
+      group_policy: invalid
+  status: 400
+  response_strings:
+      - group_policy
+      - none
+      - isolate
+
+- name: resourceless group without same_subtree rejected
+  GET: /allocation_candidates
+  request_headers:
+      openstack-api-version: placement 1.36
+  query_parameters:
+      resources1: VCPU:1
+      required2: CUSTOM_NUMA_0
+      group_policy: none
+  status: 400
+  response_strings:
+      - Resourceless
+      - same_subtree

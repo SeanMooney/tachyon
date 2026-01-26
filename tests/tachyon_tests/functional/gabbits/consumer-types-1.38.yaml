@@ -1,0 +1,177 @@
+# Test consumer_type behavior at microversion 1.38+
+# Port of Placement's consumer-types-1.38.yaml (adapted for PUT-only allocations)
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        content-type: application/json
+        openstack-api-version: placement 1.38
+
+tests:
+
+# Setup - create resource provider with inventory
+- name: create resource provider
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          DISK_GB:
+            total: 2048
+          VCPU:
+            total: 96
+  status: 200
+
+# Test consumer_type is required at 1.38
+
+- name: 400 on no consumer type put at 1.38
+  PUT: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  data:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 400
+  response_strings:
+      - "'consumer_type' is a required property"
+
+# Test consumer_type pattern validation (uppercase only)
+
+- name: malformed consumer type put
+  PUT: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  data:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: instance
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 400
+  response_strings:
+      - "'instance' does not match '^[A-Z0-9_]+$'"
+
+# Test consumer_type works correctly with uppercase
+
+- name: consumer type put succeeds with uppercase
+  PUT: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  data:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 204
+
+# Test GET returns consumer_type
+
+- name: get allocation has consumer_type
+  GET: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  status: 200
+  response_json_paths:
+      $.consumer_type: INSTANCE
+
+# Test consumer_type can be updated
+
+- name: update consumer_type to PONY
+  PUT: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  data:
+      consumer_generation: 1
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: PONY
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 204
+
+# Verify consumer_type was updated
+
+- name: verify consumer_type is PONY
+  GET: /allocations/f5a91a0a-e111-4a9c-8a33-7b320ae1e52a
+  status: 200
+  response_json_paths:
+      $.consumer_type: PONY
+
+# Test pre-1.38 does NOT require consumer_type
+
+- name: consumer put without type at 1.36 succeeds
+  PUT: /allocations/4fa4553e-e739-4f0b-a758-2fa79fda2ee0
+  request_headers:
+      openstack-api-version: placement 1.36
+  data:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 204
+
+# Test usages grouped by consumer_type at 1.38
+
+- name: create INSTANCE allocation
+  PUT: /allocations/5fa4553e-e739-4f0b-a758-2fa79fda2ee0
+  data:
+      consumer_generation: null
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+      consumer_type: INSTANCE
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 20
+  status: 204
+
+- name: usages include consumer_type grouping
+  GET: /usages?project_id=$ENVIRON['PROJECT_ID']
+  status: 200
+  response_json_paths:
+      # Should have PONY, INSTANCE groups (and possibly 'unknown' for the 1.36 allocation)
+      $.usages.PONY:
+          consumer_count: 1
+          DISK_GB: 10
+      $.usages.INSTANCE:
+          consumer_count: 1
+          DISK_GB: 20
+
+- name: limit usages by consumer_type
+  GET: /usages?project_id=$ENVIRON['PROJECT_ID']&consumer_type=PONY
+  status: 200
+  response_json_paths:
+      $.usages.`len`: 1
+      $.usages.PONY:
+          consumer_count: 1
+          DISK_GB: 10
+
+- name: limit usages bad consumer_type returns empty
+  GET: /usages?project_id=$ENVIRON['PROJECT_ID']&consumer_type=COW
+  status: 200
+  response_json_paths:
+      $.usages.`len`: 0
+
+- name: usages with consumer_type all aggregates everything
+  GET: /usages?project_id=$ENVIRON['PROJECT_ID']&consumer_type=all
+  status: 200
+  response_json_paths:
+      $.usages.`len`: 1
+      $.usages.all.consumer_count: /^\d+$/

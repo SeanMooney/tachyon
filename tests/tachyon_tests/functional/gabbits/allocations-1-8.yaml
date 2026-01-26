@@ -1,0 +1,110 @@
+# Tests for microversion 1.8 - project_id and user_id required
+# Port of Placement's allocations-1-8.yaml
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        openstack-api-version: placement 1.8
+
+tests:
+
+# Setup - create provider and inventory first
+- name: create the resource provider
+  POST: /resource_providers
+  request_headers:
+      content-type: application/json
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 201
+
+- name: post some inventory
+  POST: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  request_headers:
+      content-type: application/json
+  data:
+      resource_class: DISK_GB
+      total: 2048
+      min_unit: 10
+      max_unit: 1024
+  status: 201
+
+# Tests for project_id/user_id required at 1.8+
+
+- name: put an allocation no project_id or user_id at 1.8
+  PUT: /allocations/599ffd2d-526a-4b2e-8683-f13ad25f9958
+  request_headers:
+      content-type: application/json
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 400
+  response_strings:
+      - "'project_id' is a required field"
+  response_json_paths:
+      $.errors[0].title: Bad Request
+
+- name: put an allocation no project_id at 1.8
+  PUT: /allocations/599ffd2d-526a-4b2e-8683-f13ad25f9958
+  request_headers:
+      content-type: application/json
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+      user_id: $ENVIRON['USER_ID']
+  status: 400
+  response_strings:
+      - "'project_id' is a required field"
+  response_json_paths:
+      $.errors[0].title: Bad Request
+
+- name: put an allocation no user_id at 1.8
+  PUT: /allocations/599ffd2d-526a-4b2e-8683-f13ad25f9958
+  request_headers:
+      content-type: application/json
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+      project_id: $ENVIRON['PROJECT_ID']
+  status: 400
+  response_strings:
+      - "'user_id' is a required field"
+  response_json_paths:
+      $.errors[0].title: Bad Request
+
+# Verify that allocations work WITH project_id and user_id at 1.8
+- name: put an allocation with project_id and user_id succeeds at 1.8
+  PUT: /allocations/599ffd2d-526a-4b2e-8683-f13ad25f9958
+  request_headers:
+      content-type: application/json
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+      project_id: $ENVIRON['PROJECT_ID']
+      user_id: $ENVIRON['USER_ID']
+  status: 204
+
+# Verify pre-1.8 does NOT require project_id/user_id
+- name: put an allocation without project_id and user_id at 1.7 succeeds
+  PUT: /allocations/699ffd2d-526a-4b2e-8683-f13ad25f9959
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement 1.7
+  data:
+      allocations:
+          $ENVIRON['RP_UUID']:
+              resources:
+                  DISK_GB: 10
+  status: 204

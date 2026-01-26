@@ -49,8 +49,11 @@ def register(app: flask.Flask) -> None:
 
         The auth middleware (TachyonKeystoneContext) places the context in
         the WSGI environ as 'tachyon.context'. If running without the WSGI
-        middleware stack (e.g., Flask dev server), create the context from
-        request headers.
+        middleware stack (e.g., Flask dev server or functional tests),
+        create the context from request headers.
+
+        Supports noauth2 mode: if X-Auth-Token is present but X-User-Id is not,
+        parse user/project from the token and set appropriate roles.
         """
         # Try to get context from WSGI environ (set by auth middleware)
         ctx = flask.request.environ.get("tachyon.context")
@@ -58,20 +61,88 @@ def register(app: flask.Flask) -> None:
         if ctx is None:
             # Create context from request headers (Flask dev server case)
             # This is primarily for development/testing
+            user_id = flask.request.headers.get("X-User-Id")
+            project_id = flask.request.headers.get("X-Project-Id")
+            roles_header = flask.request.headers.get("X-Roles", "")
+
+            # Handle noauth2 mode: parse token if X-User-Id not provided
+            if user_id is None and "X-Auth-Token" in flask.request.headers:
+                token = flask.request.headers["X-Auth-Token"]
+                user_id, _sep, project_id_from_token = token.partition(":")
+                project_id = project_id or project_id_from_token or user_id
+                # Set admin roles for "admin" token (noauth2 convention)
+                if not roles_header:
+                    if user_id == "admin":
+                        roles_header = "admin,member,reader"
+                    else:
+                        roles_header = "member,reader"
+
+            roles = [r.strip() for r in roles_header.split(",") if r.strip()]
+
             ctx = tachyon_context.RequestContext(
-                user_id=flask.request.headers.get("X-User-Id"),
-                project_id=flask.request.headers.get("X-Project-Id"),
-                roles=flask.request.headers.get("X-Roles", "").split(","),
+                user_id=user_id,
+                project_id=project_id,
+                roles=roles,
             )
 
         flask.g.context = ctx
 
     @app.before_request
-    def _set_microversion() -> None:
-        """Parse and set microversion from request headers."""
+    def _set_microversion() -> flask.Response | None:
+        """Parse and set microversion from request headers.
+
+        Returns 400 Bad Request for malformed version strings.
+        Returns 406 Not Acceptable for unsupported versions.
+        """
         header = flask.request.headers.get("OpenStack-API-Version")
-        flask.g.microversion = microversion.parse(header)
-        flask.g.microversion_header = header or "placement 1.0"
+
+        try:
+            flask.g.microversion = microversion.parse_with_validation(header)
+            flask.g.microversion_header = header or "placement 1.0"
+            return None
+        except microversion.MicroversionParseError as e:
+            # 400 Bad Request for malformed version strings
+            flask.g.microversion = microversion.Microversion(1, 0)
+            flask.g.microversion_header = "placement 1.0"
+            body = {
+                "errors": [
+                    {
+                        "status": 400,
+                        "title": "Bad Request",
+                        "detail": f"invalid version string: {e.version_string}",
+                    }
+                ]
+            }
+            response = flask.jsonify(body)
+            response.status_code = 400
+            return response
+        except microversion.MicroversionNotAcceptable as e:
+            # 406 Not Acceptable for unsupported versions
+            flask.g.microversion = microversion.Microversion(1, 0)
+            flask.g.microversion_header = "placement 1.0"
+
+            # Check Accept header to determine response format
+            accept = flask.request.headers.get("Accept", "")
+            if "text/html" in accept.lower():
+                response = flask.Response(
+                    f"Unacceptable version header: {e.version_string}",
+                    status=406,
+                    content_type="text/html",
+                )
+            else:
+                body = {
+                    "errors": [
+                        {
+                            "status": 406,
+                            "title": "Not Acceptable",
+                            "detail": f"Unacceptable version header: {e.version_string}",
+                        }
+                    ]
+                }
+                response = flask.jsonify(body)
+                response.status_code = 406
+
+            return response
 
     @app.after_request
     def _add_microversion_headers(response: flask.Response) -> flask.Response:
@@ -85,7 +156,7 @@ def register(app: flask.Flask) -> None:
             mv.major,
             minor,
         )
-        response.headers["Vary"] = "OpenStack-API-Version"
+        response.headers["Vary"] = "openstack-api-version"
         return response
 
     @app.before_request

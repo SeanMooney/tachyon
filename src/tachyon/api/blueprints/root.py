@@ -20,10 +20,6 @@ LOG = log.getLogger(__name__)
 
 bp = flask.Blueprint("root", __name__)
 
-# Placement API version range
-MIN_VERSION: str = "1.0"
-MAX_VERSION: str = "1.39"
-
 
 def _mv() -> microversion.Microversion:
     """Return the parsed microversion from the request context.
@@ -56,11 +52,13 @@ def home() -> tuple[flask.Response, int]:
     :returns: Tuple of (response, status_code)
     """
     mv = _mv()
+    min_version = microversion.min_version_string()
+    max_version = microversion.max_version_string()
 
     version_data: dict[str, Any] = {
-        "id": "v%s" % MIN_VERSION,
-        "max_version": MAX_VERSION,
-        "min_version": MIN_VERSION,
+        "id": "v%s" % min_version,
+        "max_version": max_version,
+        "min_version": min_version,
         "status": "CURRENT",
         "links": [
             {
