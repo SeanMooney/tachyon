@@ -16,6 +16,7 @@ from tachyon.api.blueprints import aggregates
 from tachyon.api.blueprints import allocation_candidates
 from tachyon.api.blueprints import allocations
 from tachyon.api.blueprints import inventories
+from tachyon.api.blueprints import reshaper
 from tachyon.api.blueprints import resource_classes
 from tachyon.api.blueprints import resource_providers
 from tachyon.api.blueprints import root
@@ -66,6 +67,7 @@ def create_app(config: dict[str, Any] | None = None) -> flask.Flask:
     app.register_blueprint(resource_classes.bp)
     app.register_blueprint(allocations.bp)
     app.register_blueprint(usages.bp)
+    app.register_blueprint(reshaper.bp)
 
     LOG.info("Flask application created successfully")
     return app

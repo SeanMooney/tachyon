@@ -19,6 +19,7 @@ from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.neo4j import Neo4jContainer
 
 from tachyon.api import app as api_app
+from tachyon import policy
 
 # Global app for the current test file.
 # Set by APIFixture.start_fixture(), cleared by stop_fixture().
@@ -162,13 +163,20 @@ class APIFixture(gabbi_fixture.GabbiFixture):
         os.environ["RP_NAME1"] = "rp1-%s" % uuid.uuid4().hex[:8]
         os.environ["RP_UUID2"] = str(uuid.uuid4())
         os.environ["RP_NAME2"] = "rp2-%s" % uuid.uuid4().hex[:8]
+        os.environ["RP_UUID3"] = str(uuid.uuid4())
+        os.environ["RP_NAME3"] = "rp3-%s" % uuid.uuid4().hex[:8]
+        os.environ["RP_UUID4"] = str(uuid.uuid4())
+        os.environ["RP_NAME4"] = "rp4-%s" % uuid.uuid4().hex[:8]
         os.environ["PARENT_PROVIDER_UUID"] = str(uuid.uuid4())
         os.environ["ALT_PARENT_PROVIDER_UUID"] = str(uuid.uuid4())
         os.environ["CONSUMER_UUID"] = str(uuid.uuid4())
         os.environ["CONSUMER_UUID1"] = str(uuid.uuid4())
+        os.environ["CONSUMER_UUID2"] = str(uuid.uuid4())
         os.environ["PROJECT_ID"] = str(uuid.uuid4())
         os.environ["USER_ID"] = str(uuid.uuid4())
         os.environ["CUSTOM_RES_CLASS"] = "CUSTOM_IRON_NFV"
+        os.environ["AGG_UUID"] = str(uuid.uuid4())
+        os.environ["AGG_UUID1"] = str(uuid.uuid4())
 
         # Create Flask app with proper Neo4j config and cache it
         flask_config = {
@@ -180,6 +188,10 @@ class APIFixture(gabbi_fixture.GabbiFixture):
             "NEO4J_PASSWORD": self.db_fixture.password,
         }
         APP = api_app.create_app(flask_config)
+
+        # Initialize policy enforcer (reset first in case of previous runs)
+        policy.reset()
+        policy.get_enforcer()
 
     def stop_fixture(self):
         """Called after all tests in a YAML file complete."""
@@ -194,4 +206,8 @@ class APIFixture(gabbi_fixture.GabbiFixture):
 
         # Clean up database fixture
         self.db_fixture.cleanUp()
+
+        # Reset policy enforcer for next test file
+        policy.reset()
+
         APP = None

@@ -80,26 +80,34 @@ def list_resource_classes() -> tuple[flask.Response, int]:
 
 @bp.route("/<string:name>", methods=["PUT"])
 def create_resource_class(name: str) -> flask.Response:
-    """Create a custom resource class.
+    """Create or update a custom resource class.
 
     Custom resource classes must start with 'CUSTOM_'.
     Standard resource classes are pre-defined and cannot be created.
 
+    At microversion 1.7+:
+    - Returns 201 for new resource classes
+    - Returns 204 for existing resource classes
+    - Includes Location header
+
     :param name: Resource class name
-    :returns: Response with status 204
+    :returns: Response with status 201 (created) or 204 (updated)
     """
     flask.g.context.can(rc_policies.UPDATE)
-    # Validate name format
-    if not name.isupper():
-        raise errors.BadRequest("Resource class name '%s' must be uppercase." % name)
 
-    if not _is_custom(name) and name not in STANDARD_RESOURCE_CLASSES:
+    # Validate name format - must start with CUSTOM_
+    if not _is_custom(name):
         raise errors.BadRequest(
-            "Resource class '%s' must start with 'CUSTOM_' "
-            "or be a standard resource class." % name
+            "'name' value must start with 'CUSTOM_'."
         )
 
     with _driver().session() as session:
+        # Check if resource class already exists
+        exists = session.run(
+            "MATCH (rc:ResourceClass {name: $name}) RETURN rc",
+            name=name,
+        ).single()
+
         session.run(
             """
             MERGE (rc:ResourceClass {name: $name})
@@ -109,7 +117,13 @@ def create_resource_class(name: str) -> flask.Response:
             name=name,
         )
 
-    return flask.Response(status=204)
+    location = "/resource_classes/%s" % name
+    if exists:
+        resp = flask.Response(status=204)
+    else:
+        resp = flask.Response(status=201)
+    resp.headers["Location"] = location
+    return resp
 
 
 @bp.route("/<string:name>", methods=["GET"])

@@ -86,6 +86,11 @@ def _build_links(
 ) -> list[dict[str, str]]:
     """Build Placement-style links array respecting microversion.
 
+    Links are gated by microversion:
+    - aggregates: 1.1+
+    - traits: 1.6+
+    - allocations: 1.11+
+
     :param provider_uuid: Resource provider UUID
     :param mv: Microversion instance
     :returns: List of link dictionaries
@@ -97,12 +102,21 @@ def _build_links(
             "href": "/resource_providers/%s/inventories" % provider_uuid,
         },
         {"rel": "usages", "href": "/resource_providers/%s/usages" % provider_uuid},
-        {
-            "rel": "aggregates",
-            "href": "/resource_providers/%s/aggregates" % provider_uuid,
-        },
-        {"rel": "traits", "href": "/resource_providers/%s/traits" % provider_uuid},
     ]
+    # Aggregates link at 1.1+
+    if mv.is_at_least(1):
+        links.append(
+            {
+                "rel": "aggregates",
+                "href": "/resource_providers/%s/aggregates" % provider_uuid,
+            }
+        )
+    # Traits link at 1.6+
+    if mv.is_at_least(6):
+        links.append(
+            {"rel": "traits", "href": "/resource_providers/%s/traits" % provider_uuid}
+        )
+    # Allocations link at 1.11+
     if mv.is_at_least(11):
         links.append(
             {
@@ -881,11 +895,7 @@ def delete_resource_provider(rp_uuid: str) -> flask.Response:
             uuid=rp_uuid,
         ).single()
         if has_children and has_children["cnt"] > 0:
-            raise errors.ResourceProviderInUse(
-                "Unable to delete parent resource provider %s: "
-                "It has child resource providers." % rp_uuid,
-                code="placement.resource_provider.cannot_delete_parent",
-            )
+            raise errors.CannotDeleteParentResourceProvider(uuid=rp_uuid)
 
         # Check for allocations
         has_allocations = session.run(

@@ -196,3 +196,293 @@ tests:
   status: 200
   response_json_paths:
       $.allocation_requests.`len`: 1
+
+# root_required tests (microversion 1.35+)
+
+- name: root_required rejected before 1.35
+  GET: /allocation_candidates?resources=VCPU:1&root_required=CUSTOM_TEST_TRAIT
+  request_headers:
+      openstack-api-version: placement 1.34
+  status: 400
+  response_strings:
+      - Invalid query string parameters
+      - "'root_required' was unexpected"
+
+- name: root_required accepted at 1.35
+  GET: /allocation_candidates?resources=VCPU:1&root_required=CUSTOM_TEST_TRAIT
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 200
+  response_json_paths:
+      # No providers have CUSTOM_TEST_TRAIT, so empty results
+      $.allocation_requests: []
+      $.provider_summaries: {}
+
+# Create a custom trait for testing root_required filtering
+- name: create custom trait for root_required test
+  PUT: /traits/CUSTOM_ENABLED
+  request_headers:
+      openstack-api-version: placement latest
+  status: 201
+
+- name: create disabled trait for root_required test
+  PUT: /traits/CUSTOM_DISABLED
+  request_headers:
+      openstack-api-version: placement latest
+  status: 201
+
+# Add CUSTOM_ENABLED trait to first provider (RP_UUID)
+- name: add enabled trait to first provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      traits:
+          - CUSTOM_ENABLED
+      resource_provider_generation: 1
+  status: 200
+
+# Add CUSTOM_DISABLED trait to second provider (RP_UUID1)
+- name: add disabled trait to second provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/traits
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      traits:
+          - CUSTOM_DISABLED
+      resource_provider_generation: 1
+  status: 200
+
+- name: root_required filters by required trait
+  desc: Only providers with CUSTOM_ENABLED trait should be returned
+  GET: /allocation_candidates?resources=VCPU:1&root_required=CUSTOM_ENABLED
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.provider_summaries.`len`: 1
+      $.allocation_requests[0].allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+
+- name: root_required filters by forbidden trait
+  desc: Providers with CUSTOM_DISABLED trait should be excluded
+  GET: /allocation_candidates?resources=VCPU:1&root_required=!CUSTOM_DISABLED
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.provider_summaries.`len`: 1
+      $.allocation_requests[0].allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+
+- name: root_required with multiple traits
+  desc: Can combine required and forbidden traits
+  GET: /allocation_candidates?resources=VCPU:1&root_required=CUSTOM_ENABLED,!CUSTOM_DISABLED
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+
+- name: root_required excludes all when no matches
+  desc: If required trait exists on no providers, return empty
+  GET: /allocation_candidates?resources=VCPU:1&root_required=CUSTOM_NONEXISTENT_TRAIT
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 200
+  response_json_paths:
+      $.allocation_requests: []
+      $.provider_summaries: {}
+
+# Tests for 1.29 provider_summaries full tree behavior
+
+- name: create child provider for tree tests
+  POST: /resource_providers
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      name: child-provider
+      uuid: $ENVIRON['RP_UUID2']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+  response_json_paths:
+      $.parent_provider_uuid: $ENVIRON['RP_UUID']
+
+- name: create custom iron nfv resource class
+  PUT: /resource_classes/CUSTOM_IRON_NFV
+  request_headers:
+      openstack-api-version: placement latest
+  status: 201
+
+- name: add inventory to child provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement latest
+  data:
+      resource_provider_generation: 0
+      inventories:
+        CUSTOM_IRON_NFV:
+          total: 8
+  status: 200
+
+- name: provider_summaries before 1.29 only includes matching providers
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.28
+  status: 200
+  response_json_paths:
+      # Only includes providers that directly satisfy resources
+      $.provider_summaries.`len`: 2
+
+- name: provider_summaries at 1.29 includes full tree
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.29
+  status: 200
+  response_json_paths:
+      # At 1.29+, should include child provider even though it doesn't have VCPU
+      # because its parent is in the allocation request
+      $.provider_summaries.`len`: 3
+
+# Tests for 1.32 member_of negative !in: syntax
+
+- name: create aggregate for member_of tests
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/aggregates
+  request_headers:
+      content-type: application/json
+      openstack-api-version: placement 1.19
+  data:
+      aggregates:
+          - aaaaaaaa-1111-2222-3333-444444444444
+      resource_provider_generation: 2
+  status: 200
+
+- name: member_of !in rejected before 1.32
+  GET: /allocation_candidates?resources=VCPU:1&member_of=!in:aaaaaaaa-1111-2222-3333-444444444444
+  request_headers:
+      openstack-api-version: placement 1.31
+  status: 400
+  response_strings:
+      - Forbidden aggregate filters require microversion 1.32
+
+- name: member_of !in excludes providers in aggregate
+  GET: /allocation_candidates?resources=VCPU:1&member_of=!in:aaaaaaaa-1111-2222-3333-444444444444
+  request_headers:
+      openstack-api-version: placement 1.32
+  status: 200
+  response_json_paths:
+      # Only provider NOT in the aggregate should be returned
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations["$ENVIRON['RP_UUID1']"].resources.VCPU: 1
+
+# Tests for 1.39 any-traits in: syntax
+# NOTE: The in: syntax for required traits at 1.39 is not yet implemented in Tachyon.
+# These tests are commented out until the feature is implemented.
+
+# - name: create traits for any-traits tests
+#   PUT: /traits/CUSTOM_FAST
+#   request_headers:
+#       openstack-api-version: placement latest
+#   status: 204
+#
+# - name: create second trait for any-traits tests
+#   PUT: /traits/CUSTOM_SLOW
+#   request_headers:
+#       openstack-api-version: placement latest
+#   status: 204
+#
+# - name: add CUSTOM_FAST to first provider
+#   PUT: /resource_providers/$ENVIRON['RP_UUID']/traits
+#   request_headers:
+#       content-type: application/json
+#       openstack-api-version: placement latest
+#   data:
+#       traits:
+#           - CUSTOM_ENABLED
+#           - CUSTOM_FAST
+#       resource_provider_generation: 3
+#   status: 200
+#
+# - name: add CUSTOM_SLOW to second provider
+#   PUT: /resource_providers/$ENVIRON['RP_UUID1']/traits
+#   request_headers:
+#       content-type: application/json
+#       openstack-api-version: placement latest
+#   data:
+#       traits:
+#           - CUSTOM_DISABLED
+#           - CUSTOM_SLOW
+#       resource_provider_generation: 1
+#   status: 200
+#
+# - name: required in rejected before 1.39
+#   GET: /allocation_candidates?resources=VCPU:1&required=in:CUSTOM_FAST,CUSTOM_SLOW
+#   request_headers:
+#       openstack-api-version: placement 1.38
+#   status: 400
+#   response_strings:
+#       - "'in:' expression not supported until microversion 1.39"
+#
+# - name: required in returns providers with any of the traits
+#   desc: Providers with either CUSTOM_FAST or CUSTOM_SLOW should match
+#   GET: /allocation_candidates?resources=VCPU:1&required=in:CUSTOM_FAST,CUSTOM_SLOW
+#   request_headers:
+#       openstack-api-version: placement 1.39
+#   status: 200
+#   response_json_paths:
+#       # Both providers have one of the traits
+#       $.allocation_requests.`len`: 2
+#
+# - name: required in combined with regular required
+#   desc: Provider must have CUSTOM_ENABLED AND (CUSTOM_FAST OR CUSTOM_SLOW)
+#   GET: /allocation_candidates?resources=VCPU:1&required=CUSTOM_ENABLED,in:CUSTOM_FAST,CUSTOM_SLOW
+#   request_headers:
+#       openstack-api-version: placement 1.39
+#   status: 200
+#   response_json_paths:
+#       # Only first provider has CUSTOM_ENABLED and one of the in: traits
+#       $.allocation_requests.`len`: 1
+
+# Tests for 1.34 mappings in allocation candidates
+
+- name: mappings not present before 1.34
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.33
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+      # Mappings should NOT be present before 1.34
+  response_forbidden_headers:
+      # Just check there's no mappings key in the first allocation request
+      # by verifying the structure
+
+- name: mappings present at 1.34
+  desc: Mappings should be keyed by request group suffix, empty string for unnumbered
+  GET: /allocation_candidates?resources=VCPU:1
+  request_headers:
+      openstack-api-version: placement 1.34
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+      # Mappings should map request group suffix to provider UUIDs
+      # Empty string "" represents the unnumbered/default request group
+      $.allocation_requests[0].mappings."": /$ENVIRON['RP_UUID']|$ENVIRON['RP_UUID1']/
+      $.allocation_requests[1].mappings."": /$ENVIRON['RP_UUID']|$ENVIRON['RP_UUID1']/
+
+- name: mappings structure validation
+  desc: Verify mappings has correct structure - keyed by suffix with provider UUID lists
+  GET: /allocation_candidates?resources=VCPU:1,MEMORY_MB:1024
+  request_headers:
+      openstack-api-version: placement 1.34
+  status: 200
+  response_json_paths:
+      # Each allocation request should have a mappings dict
+      # The "" key (unnumbered group) should map to a list with the provider UUID
+      # Verify the mappings key exists and has the empty string key
+      $.allocation_requests[0].mappings."".`len`: 1

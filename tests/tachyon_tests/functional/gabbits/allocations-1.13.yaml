@@ -1,0 +1,371 @@
+# Tests for microversion 1.13 - POST /allocations for multiple consumers
+# This endpoint is critical for live migration and other atomic multi-consumer
+# allocation operations.
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        content-type: application/json
+        openstack-api-version: placement 1.28
+
+tests:
+
+# --- Setup ---
+
+- name: create resource provider for allocations
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME']
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create second resource provider
+  POST: /resource_providers
+  data:
+      name: $ENVIRON['RP_NAME1']
+      uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: set inventory on first provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 24
+          MEMORY_MB:
+            total: 65536
+          DISK_GB:
+            total: 1000
+  status: 200
+
+- name: set inventory on second provider
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 16
+          MEMORY_MB:
+            total: 32768
+          DISK_GB:
+            total: 500
+  status: 200
+
+# --- POST /allocations not available before 1.13 ---
+
+- name: post allocations rejected before 1.13
+  POST: /allocations
+  request_headers:
+      openstack-api-version: placement 1.12
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+  status: 404
+
+# --- POST /allocations for single consumer ---
+
+- name: post allocations for single consumer with null generation
+  desc: Create allocations for a new consumer (generation null means new)
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 2
+              MEMORY_MB: 1024
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+  status: 204
+
+- name: verify single consumer allocation was created
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 2
+      $.allocations["$ENVIRON['RP_UUID']"].resources.MEMORY_MB: 1024
+      $.consumer_generation: 1
+
+# --- POST /allocations for multiple consumers (live migration pattern) ---
+
+- name: post allocations for multiple consumers
+  desc: Atomically create allocations for consumer1 and consumer2
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID1']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 4
+              MEMORY_MB: 2048
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+      $ENVIRON['CONSUMER_UUID2']:
+        allocations:
+          $ENVIRON['RP_UUID1']:
+            resources:
+              VCPU: 2
+              MEMORY_MB: 4096
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+  status: 204
+
+- name: verify first consumer from batch
+  GET: /allocations/$ENVIRON['CONSUMER_UUID1']
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 4
+      $.allocations["$ENVIRON['RP_UUID']"].resources.MEMORY_MB: 2048
+      $.consumer_generation: 1
+
+- name: verify second consumer from batch
+  GET: /allocations/$ENVIRON['CONSUMER_UUID2']
+  status: 200
+  response_json_paths:
+      $.allocations["$ENVIRON['RP_UUID1']"].resources.VCPU: 2
+      $.allocations["$ENVIRON['RP_UUID1']"].resources.MEMORY_MB: 4096
+      $.consumer_generation: 1
+
+# --- Live migration pattern: move allocations from source to destination ---
+
+- name: live migration move allocations atomically
+  desc: Move consumer1 from RP_UUID to RP_UUID1 (simulating live migration)
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID1']:
+        allocations:
+          $ENVIRON['RP_UUID1']:
+            resources:
+              VCPU: 4
+              MEMORY_MB: 2048
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 1
+  status: 204
+
+- name: verify allocation moved to destination
+  GET: /allocations/$ENVIRON['CONSUMER_UUID1']
+  status: 200
+  response_json_paths:
+      # Should now be on RP_UUID1, not RP_UUID
+      $.allocations["$ENVIRON['RP_UUID1']"].resources.VCPU: 4
+      $.allocations["$ENVIRON['RP_UUID1']"].resources.MEMORY_MB: 2048
+      $.consumer_generation: 2
+
+- name: verify source provider has no allocation for moved consumer
+  GET: /resource_providers/$ENVIRON['RP_UUID']/allocations
+  status: 200
+  # Consumer1's allocation should not appear on RP_UUID anymore
+
+# --- Consumer generation conflict tests ---
+
+- name: post allocations with wrong generation fails
+  desc: Attempting to update with wrong generation should fail with 409
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID1']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 0
+  status: 409
+  response_strings:
+      - consumer generation conflict
+  response_json_paths:
+      $.errors[0].code: placement.concurrent_update
+
+- name: post allocations with null generation for existing consumer fails
+  desc: null generation for existing consumer should fail with 409
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID1']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+  status: 409
+  response_strings:
+      - consumer generation conflict
+
+# --- Clearing allocations via empty allocations dict ---
+# Per Placement behavior: clearing all allocations DELETES the consumer
+
+- name: clear allocations via empty dict
+  desc: Empty allocations dict should remove all allocations AND delete consumer (Placement behavior)
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations: {}
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 1
+  status: 204
+
+- name: verify consumer deleted after clearing allocations
+  desc: Consumer should be deleted when allocations are cleared (Placement behavior)
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+      $.allocations: {}
+
+- name: verify consumer can be recreated with null generation
+  desc: After consumer deletion, null generation should succeed
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+  status: 204
+
+- name: verify recreated consumer has generation 1
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  status: 200
+  response_json_paths:
+      $.consumer_generation: 1
+
+# --- Validation errors ---
+
+- name: post allocations missing project_id
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: null
+  status: 400
+  response_strings:
+      - "'project_id' is a required property"
+
+- name: post allocations missing user_id
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        consumer_generation: null
+  status: 400
+  response_strings:
+      - "'user_id' is a required property"
+
+- name: post allocations missing consumer_generation at 1.28
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+  status: 400
+  response_strings:
+      - "'consumer_generation' is a required property"
+
+- name: post allocations for nonexistent provider
+  desc: Allocation to non-existent provider should fail with 400
+  POST: /allocations
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          00000000-0000-0000-0000-000000000000:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 1
+  status: 400
+  response_strings:
+      - "Allocation for resource provider"
+      - "that does not exist"
+
+# --- Test with consumer_type at 1.38+ ---
+
+- name: post allocations with consumer_type at 1.38
+  POST: /allocations
+  request_headers:
+      openstack-api-version: placement 1.38
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 1
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 1
+        consumer_type: INSTANCE
+  status: 204
+
+- name: verify consumer_type was set
+  GET: /allocations/$ENVIRON['CONSUMER_UUID']
+  request_headers:
+      openstack-api-version: placement 1.38
+  status: 200
+  response_json_paths:
+      $.consumer_type: INSTANCE
+      $.allocations["$ENVIRON['RP_UUID']"].resources.VCPU: 1
+
+- name: post allocations missing consumer_type at 1.38 fails
+  POST: /allocations
+  request_headers:
+      openstack-api-version: placement 1.38
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 2
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 2
+  status: 400
+  response_strings:
+      - "'consumer_type' is a required property"
+
+- name: post allocations invalid consumer_type format fails
+  POST: /allocations
+  request_headers:
+      openstack-api-version: placement 1.38
+  data:
+      $ENVIRON['CONSUMER_UUID']:
+        allocations:
+          $ENVIRON['RP_UUID']:
+            resources:
+              VCPU: 2
+        project_id: $ENVIRON['PROJECT_ID']
+        user_id: $ENVIRON['USER_ID']
+        consumer_generation: 2
+        consumer_type: invalid-type
+  status: 400
+  response_strings:
+      - does not match

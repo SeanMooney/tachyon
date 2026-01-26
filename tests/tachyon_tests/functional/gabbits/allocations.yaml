@@ -33,24 +33,70 @@ tests:
         total: 16384
   status: 200
 
-# --- Error Cases ---
+# --- Non-existent consumer returns empty allocations ---
 
-- name: get allocations for nonexistent consumer
+- name: get allocations for nonexistent consumer returns empty
+  desc: Per Placement API spec, non-existent consumer returns empty allocations, not 404
   GET: /allocations/nonexistent-consumer
-  status: 404
+  status: 200
   response_json_paths:
-    $.errors[0].status: 404
+    $.allocations: {}
 
 - name: put allocation without consumer_generation fails
   PUT: /allocations/$ENVIRON['CONSUMER_UUID']
   request_headers:
     content-type: application/json
   data:
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
     allocations:
       $ENVIRON['RP_UUID']:
         resources:
           VCPU: 2
   status: 400
+  response_strings:
+    - "'consumer_generation' is a required field"
+
+# --- consumer_generation: null tests ---
+
+- name: put allocation with null consumer_generation for new consumer
+  desc: consumer_generation null means "expect new consumer" - should succeed
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID1']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 1
+  status: 204
+
+- name: put allocation with null consumer_generation for existing consumer fails
+  desc: consumer_generation null for existing consumer should fail with 409
+  PUT: /allocations/$ENVIRON['CONSUMER_UUID1']
+  request_headers:
+    content-type: application/json
+  data:
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
+    allocations:
+      $ENVIRON['RP_UUID']:
+        resources:
+          VCPU: 2
+  status: 409
+  response_json_paths:
+    $.errors[0].status: 409
+
+- name: cleanup consumer1 allocations
+  DELETE: /allocations/$ENVIRON['CONSUMER_UUID1']
+  status: 204
 
 # --- Successful Allocation ---
 
@@ -59,21 +105,25 @@ tests:
   request_headers:
     content-type: application/json
   data:
-    consumer_generation: 0
+    consumer_generation: null
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
     allocations:
       $ENVIRON['RP_UUID']:
         resources:
           VCPU: 2
           MEMORY_MB: 1024
-  status: 200
-  response_json_paths:
-    $.consumer_generation: 1
+  status: 204
 
 - name: get allocation
+  desc: Verify project_id and user_id are returned in GET response (microversion 1.12+)
   GET: /allocations/$ENVIRON['CONSUMER_UUID']
   status: 200
   response_json_paths:
     $.consumer_generation: 1
+    $.project_id: $ENVIRON['PROJECT_ID']
+    $.user_id: $ENVIRON['USER_ID']
 
 # --- Update Allocation ---
 
@@ -83,6 +133,9 @@ tests:
     content-type: application/json
   data:
     consumer_generation: 0
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
     allocations:
       $ENVIRON['RP_UUID']:
         resources:
@@ -97,13 +150,14 @@ tests:
     content-type: application/json
   data:
     consumer_generation: 1
+    project_id: $ENVIRON['PROJECT_ID']
+    user_id: $ENVIRON['USER_ID']
+    consumer_type: INSTANCE
     allocations:
       $ENVIRON['RP_UUID']:
         resources:
           VCPU: 4
-  status: 200
-  response_json_paths:
-    $.consumer_generation: 2
+  status: 204
 
 # --- Provider Allocations ---
 

@@ -15,6 +15,8 @@ from typing import Any
 
 from neo4j.exceptions import TransientError
 from oslo_log import log
+import os_resource_classes as orc
+import os_traits
 
 LOG = log.getLogger(__name__)
 
@@ -73,8 +75,46 @@ INDEXES: list[str] = [
 SCHEMA_STATEMENTS: list[str] = UNIQUENESS_CONSTRAINTS + EXISTENCE_CONSTRAINTS + INDEXES
 
 
+def _register_standard_resource_classes(session: Any) -> None:
+    """Register all standard resource classes from os-resource-classes.
+
+    :param session: Neo4j session to execute statements against
+    """
+    LOG.debug("Registering %d standard resource classes", len(orc.STANDARDS))
+    for rc_name in orc.STANDARDS:
+        session.run(
+            """
+            MERGE (rc:ResourceClass {name: $name})
+            ON CREATE SET rc.created_at = datetime(), rc.updated_at = datetime()
+            """,
+            name=rc_name,
+        )
+    LOG.info("Registered %d standard resource classes", len(orc.STANDARDS))
+
+
+def _register_standard_traits(session: Any) -> None:
+    """Register all standard traits from os-traits.
+
+    :param session: Neo4j session to execute statements against
+    """
+    # os_traits.TRAITS is a frozenset of all standard trait names
+    traits = list(os_traits.TRAITS)
+    LOG.debug("Registering %d standard traits", len(traits))
+    for trait_name in traits:
+        session.run(
+            """
+            MERGE (t:Trait {name: $name})
+            ON CREATE SET t.created_at = datetime(), t.updated_at = datetime()
+            """,
+            name=trait_name,
+        )
+    LOG.info("Registered %d standard traits", len(traits))
+
+
 def apply_schema(session: Any, max_retries: int = 3) -> None:
     """Apply all schema constraints and indexes with retry logic.
+
+    Also registers standard resource classes and traits after schema is applied.
 
     :param session: Neo4j session to execute statements against
     :param max_retries: Maximum number of retry attempts on transient errors
@@ -88,6 +128,11 @@ def apply_schema(session: Any, max_retries: int = 3) -> None:
                 LOG.debug("Executing schema statement: %s", statement[:60])
                 session.run(statement)
             LOG.info("Schema applied successfully")
+
+            # Register standard resource classes and traits
+            _register_standard_resource_classes(session)
+            _register_standard_traits(session)
+
             return
         except TransientError as e:
             if attempt < max_retries - 1:

@@ -1,0 +1,191 @@
+# Tests for sharing provider support in allocation candidates
+# A sharing provider has the MISC_SHARES_VIA_AGGREGATE trait and provides
+# resources to other provider trees via shared aggregates.
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        content-type: application/json
+        accept: application/json
+        openstack-api-version: placement 1.34
+
+tests:
+
+# Setup scenario:
+# - compute_host (has VCPU, MEMORY_MB)
+# - shared_storage (has DISK_GB, MISC_SHARES_VIA_AGGREGATE trait)
+# - Both are in the same aggregate "shared_agg"
+#
+# When requesting VCPU + MEMORY_MB + DISK_GB, the allocation candidate should
+# include allocations from both compute_host and shared_storage.
+
+# Create compute host with VCPU and MEMORY_MB
+- name: create compute host
+  POST: /resource_providers
+  data:
+      name: compute_host
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set compute host inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      inventories:
+          VCPU:
+              total: 24
+          MEMORY_MB:
+              total: 65536
+      resource_provider_generation: $HISTORY['create compute host'].$RESPONSE['$.generation']
+  status: 200
+
+# Add compute host to shared aggregate
+- name: add compute host to aggregate
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.19
+  data:
+      aggregates:
+        - $ENVIRON['AGG_UUID']
+      resource_provider_generation: $HISTORY['set compute host inventory'].$RESPONSE['$.resource_provider_generation']
+  status: 200
+
+# Create shared storage provider with DISK_GB
+- name: create shared storage
+  POST: /resource_providers
+  data:
+      name: shared_storage
+      uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: set shared storage inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      inventories:
+          DISK_GB:
+              total: 10000
+      resource_provider_generation: $HISTORY['create shared storage'].$RESPONSE['$.generation']
+  status: 200
+
+# Add MISC_SHARES_VIA_AGGREGATE trait to shared storage
+- name: add sharing trait to shared storage
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/traits
+  data:
+      traits:
+        - MISC_SHARES_VIA_AGGREGATE
+      resource_provider_generation: $HISTORY['set shared storage inventory'].$RESPONSE['$.resource_provider_generation']
+  status: 200
+
+# Add shared storage to aggregate
+- name: add shared storage to aggregate
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.19
+  data:
+      aggregates:
+        - $ENVIRON['AGG_UUID']
+      resource_provider_generation: $HISTORY['add sharing trait to shared storage'].$RESPONSE['$.resource_provider_generation']
+  status: 200
+
+# Test: Request resources that require both tree and sharing provider
+- name: allocation candidates with shared storage
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4,MEMORY_MB:4096,DISK_GB:100
+  status: 200
+  response_json_paths:
+      # Should get at least one candidate
+      $.allocation_requests.`len`: 1
+  # Verify response contains both providers
+  response_strings:
+      - VCPU
+      - MEMORY_MB
+      - DISK_GB
+
+# Test: Request only resources that compute can provide - no sharing needed
+- name: allocation candidates without shared resources
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4,MEMORY_MB:4096
+  status: 200
+  response_json_paths:
+      # Should get candidate from compute only
+      $.allocation_requests.`len`: 1
+  response_strings:
+      - VCPU
+      - MEMORY_MB
+
+# Test: Create another compute host not in the aggregate - should NOT get sharing
+- name: create compute host 2
+  POST: /resource_providers
+  data:
+      name: compute_host_2
+      uuid: $ENVIRON['RP_UUID2']
+  status: 200
+
+- name: set compute host 2 inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  data:
+      inventories:
+          VCPU:
+              total: 24
+          MEMORY_MB:
+              total: 65536
+      resource_provider_generation: $HISTORY['create compute host 2'].$RESPONSE['$.generation']
+  status: 200
+
+# Compute host 2 is NOT in the aggregate, so it cannot use shared storage
+- name: allocation candidates for compute 2 without sharing
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4,MEMORY_MB:4096,DISK_GB:100
+      in_tree: $ENVIRON['RP_UUID2']
+  request_headers:
+      openstack-api-version: placement 1.31
+  status: 200
+  response_json_paths:
+      # No candidates because compute_host_2 can't provide DISK_GB and isn't in the aggregate
+      $.allocation_requests.`len`: 0
+
+# Test: Provider without MISC_SHARES_VIA_AGGREGATE is NOT a sharing provider
+- name: create non-sharing storage
+  POST: /resource_providers
+  data:
+      name: non_sharing_storage
+      uuid: $ENVIRON['RP_UUID3']
+  status: 200
+
+- name: set non-sharing storage inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID3']/inventories
+  data:
+      inventories:
+          DISK_GB:
+              total: 5000
+      resource_provider_generation: $HISTORY['create non-sharing storage'].$RESPONSE['$.generation']
+  status: 200
+
+# Add non-sharing storage to the same aggregate but without the trait
+- name: add non-sharing storage to aggregate
+  PUT: /resource_providers/$ENVIRON['RP_UUID3']/aggregates
+  request_headers:
+      openstack-api-version: placement 1.19
+  data:
+      aggregates:
+        - $ENVIRON['AGG_UUID']
+      resource_provider_generation: $HISTORY['set non-sharing storage inventory'].$RESPONSE['$.resource_provider_generation']
+  status: 200
+
+# The non-sharing storage should NOT be used as a sharing provider
+# Only the one with MISC_SHARES_VIA_AGGREGATE trait should be considered
+- name: verify only sharing providers are used
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4,MEMORY_MB:4096,DISK_GB:100
+  status: 200
+  response_json_paths:
+      # Should get candidates - verify DISK_GB is in response
+      $.allocation_requests.`len`: 1
+  response_strings:
+      - DISK_GB

@@ -1,0 +1,165 @@
+# Tests for same_subtree parameter at microversion 1.36+
+# Also tests resourceless request groups which are required for same_subtree
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        accept: application/json
+        content-type: application/json
+        openstack-api-version: placement 1.36
+
+tests:
+
+# --- Setup: Create a nested provider tree ---
+
+- name: create root provider (compute node)
+  POST: /resource_providers
+  data:
+      name: compute-node
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create numa0 child provider
+  POST: /resource_providers
+  data:
+      name: numa0
+      uuid: $ENVIRON['RP_UUID1']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: create numa1 child provider
+  POST: /resource_providers
+  data:
+      name: numa1
+      uuid: $ENVIRON['RP_UUID2']
+      parent_provider_uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set inventory on numa0
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 16384
+  status: 200
+
+- name: set inventory on numa1
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/inventories
+  data:
+      resource_provider_generation: 0
+      inventories:
+          VCPU:
+            total: 8
+          MEMORY_MB:
+            total: 16384
+  status: 200
+
+# Create traits for NUMA identification
+- name: create NUMA trait
+  PUT: /traits/CUSTOM_HW_NUMA_ROOT
+  status: 201
+
+- name: add NUMA trait to numa0
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_HW_NUMA_ROOT
+  status: 200
+
+- name: add NUMA trait to numa1
+  PUT: /resource_providers/$ENVIRON['RP_UUID2']/traits
+  data:
+      resource_provider_generation: 1
+      traits:
+          - CUSTOM_HW_NUMA_ROOT
+  status: 200
+
+# --- same_subtree parameter validation ---
+
+- name: same_subtree rejected before 1.36
+  GET: /allocation_candidates?resources=VCPU:1&same_subtree=_1,_2
+  request_headers:
+      openstack-api-version: placement 1.35
+  status: 400
+  response_strings:
+      - "'same_subtree' was unexpected"
+
+- name: same_subtree accepted at 1.36
+  GET: /allocation_candidates?resources1=VCPU:1&resources2=MEMORY_MB:1024&same_subtree=_1,_2&group_policy=none
+  status: 200
+
+# --- Resourceless request groups validation ---
+
+- name: resourceless group without same_subtree fails
+  desc: Resourceless request groups must be used with same_subtree
+  GET: /allocation_candidates?resources=VCPU:1&required1=CUSTOM_HW_NUMA_ROOT&group_policy=none
+  status: 400
+  response_strings:
+      - resourceless request groups must be used with same_subtree
+
+- name: resourceless group with same_subtree succeeds
+  desc: Using a resourceless group (only required, no resources) with same_subtree
+  GET: /allocation_candidates?resources1=VCPU:1&required_NUMA=CUSTOM_HW_NUMA_ROOT&same_subtree=_1,_NUMA&group_policy=none
+  request_headers:
+      openstack-api-version: placement 1.36
+  status: 200
+
+# --- same_subtree suffix validation ---
+
+- name: same_subtree with unknown suffix fails
+  desc: All suffixes in same_subtree must reference existing request groups
+  GET: /allocation_candidates?resources1=VCPU:1&same_subtree=_1,_UNKNOWN&group_policy=none
+  status: 400
+  response_strings:
+      - same_subtree references unknown request group
+
+# --- Basic same_subtree functionality ---
+
+- name: get candidates without same_subtree
+  desc: Without same_subtree, any combination is possible
+  GET: /allocation_candidates?resources1=VCPU:2&resources2=MEMORY_MB:4096&group_policy=none
+  status: 200
+  response_json_paths:
+      # Both NUMA providers can satisfy VCPU and MEMORY_MB
+      $.allocation_requests.`len`: 2
+
+- name: get candidates with same_subtree
+  desc: With same_subtree, VCPU and MEMORY must come from same provider
+  GET: /allocation_candidates?resources1=VCPU:2&resources2=MEMORY_MB:4096&same_subtree=_1,_2&group_policy=none
+  status: 200
+  response_json_paths:
+      # With same_subtree constraint, only combinations where both resources
+      # come from the same subtree are valid
+      $.allocation_requests.`len`: 2
+
+# --- Multiple same_subtree groups ---
+
+- name: multiple same_subtree parameters
+  desc: Multiple same_subtree parameters are treated independently
+  GET: /allocation_candidates?resources1=VCPU:1&resources2=MEMORY_MB:1024&same_subtree=_1,_2&group_policy=none
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+
+# --- Alphanumeric suffixes with same_subtree (1.33+) ---
+
+- name: same_subtree with alphanumeric suffixes
+  desc: Test using named suffixes like _COMPUTE and _MEMORY
+  GET: /allocation_candidates?resources_COMPUTE=VCPU:1&resources_MEMORY=MEMORY_MB:1024&same_subtree=_COMPUTE,_MEMORY&group_policy=none
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 2
+
+# --- Edge cases ---
+
+- name: same_subtree with unnumbered group reference
+  desc: Empty string in same_subtree references the unnumbered group
+  GET: /allocation_candidates?resources=VCPU:1&resources1=MEMORY_MB:1024&same_subtree=,_1&group_policy=none
+  status: 200

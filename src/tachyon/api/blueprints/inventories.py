@@ -17,6 +17,7 @@ from flask import g
 from flask import jsonify
 from flask import request
 from neo4j.time import DateTime
+import os_resource_classes as orc
 
 from oslo_log import log
 
@@ -70,7 +71,10 @@ def _format_inventory_response(
 
 
 def _normalize_inventory(inv: dict[str, Any]) -> dict[str, Any]:
-    # Note: validation of 'total' is done in _validate_inventory
+    """Normalize inventory values with Placement-compatible defaults.
+
+    Note: Placement defaults max_unit to INT_MAX (2147483647), not total.
+    """
     total = inv.get("total", 0)
     reserved = inv.get("reserved")
     if reserved is None:
@@ -80,7 +84,8 @@ def _normalize_inventory(inv: dict[str, Any]) -> dict[str, Any]:
         min_unit = 1
     max_unit = inv.get("max_unit")
     if max_unit is None:
-        max_unit = total
+        # Placement defaults max_unit to INT_MAX, not total
+        max_unit = INT_MAX
     step_size = inv.get("step_size")
     if step_size is None:
         step_size = 1
@@ -99,13 +104,15 @@ def _normalize_inventory(inv: dict[str, Any]) -> dict[str, Any]:
 
 def _ensure_resource_class(session: Any, name: str, detail: str) -> None:
     """Ensure a resource class exists, otherwise raise BadRequest."""
-    STANDARD_RCS = {"VCPU", "MEMORY_MB", "DISK_GB", "IPV4_ADDRESS"}
+    # Standard resource classes from os-resource-classes library
+    STANDARD_RCS = set(orc.STANDARDS)
+
     found = session.run(
         "MATCH (rc:ResourceClass {name: $name}) RETURN rc",
         name=name,
     ).single()
     if not found:
-        if name in STANDARD_RCS:
+        if name in STANDARD_RCS or orc.is_custom(name):
             session.run(
                 """
                 MERGE (rc:ResourceClass {name: $name})

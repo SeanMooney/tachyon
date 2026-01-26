@@ -1,0 +1,190 @@
+# Tests for inventory constraint validation in allocation candidates
+# Tests min_unit, max_unit, and step_size constraints
+
+fixtures:
+    - APIFixture
+
+defaults:
+    request_headers:
+        x-auth-token: admin
+        content-type: application/json
+        accept: application/json
+        openstack-api-version: placement 1.34
+
+tests:
+
+# Create a provider with constrained inventory
+- name: create provider with constrained inventory
+  POST: /resource_providers
+  data:
+      name: constrained_provider
+      uuid: $ENVIRON['RP_UUID']
+  status: 200
+
+- name: set inventory with constraints
+  PUT: /resource_providers/$ENVIRON['RP_UUID']/inventories
+  data:
+      inventories:
+          VCPU:
+              total: 64
+              min_unit: 2
+              max_unit: 32
+              step_size: 2
+          MEMORY_MB:
+              total: 131072
+              min_unit: 1024
+              max_unit: 65536
+              step_size: 1024
+          DISK_GB:
+              total: 1000
+              min_unit: 10
+              max_unit: 500
+              step_size: 10
+      resource_provider_generation: $HISTORY['create provider with constrained inventory'].$RESPONSE['$.generation']
+  status: 200
+
+# Test: Request that satisfies all constraints - should succeed
+- name: valid request satisfies all constraints
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4,MEMORY_MB:2048,DISK_GB:100
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.VCPU: 4
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.MEMORY_MB: 2048
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.DISK_GB: 100
+
+# Test: Request below min_unit - should return no candidates
+- name: request below min_unit returns no candidates
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:1
+  status: 200
+  response_json_paths:
+      # 1 VCPU is below min_unit of 2
+      $.allocation_requests.`len`: 0
+
+# Test: Request above max_unit - should return no candidates
+- name: request above max_unit returns no candidates
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:48
+  status: 200
+  response_json_paths:
+      # 48 VCPU is above max_unit of 32
+      $.allocation_requests.`len`: 0
+
+# Test: Request not aligned to step_size - should return no candidates
+- name: request not aligned to step_size returns no candidates
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:3
+  status: 200
+  response_json_paths:
+      # 3 VCPU is not aligned to step_size 2 (3 - 2) % 2 != 0
+      $.allocation_requests.`len`: 0
+
+# Test: Another step_size violation
+- name: memory not aligned to step_size returns no candidates
+  GET: /allocation_candidates
+  query_parameters:
+      resources: MEMORY_MB:1500
+  status: 200
+  response_json_paths:
+      # 1500 MB is not aligned to step_size 1024 (1500 - 1024) % 1024 != 0
+      $.allocation_requests.`len`: 0
+
+# Test: Request at exactly min_unit - should succeed
+- name: request at exactly min_unit
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:2
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.VCPU: 2
+
+# Test: Request at exactly max_unit - should succeed
+- name: request at exactly max_unit
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:32
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.VCPU: 32
+
+# Test: Multiple resources with mixed constraint validation
+- name: multiple resources all must satisfy constraints
+  GET: /allocation_candidates
+  query_parameters:
+      # VCPU: 4 is valid (>= 2, <= 32, aligned to 2)
+      # MEMORY_MB: 1500 is invalid (not aligned to 1024)
+      resources: VCPU:4,MEMORY_MB:1500
+  status: 200
+  response_json_paths:
+      # Should return no candidates because MEMORY_MB fails
+      $.allocation_requests.`len`: 0
+
+# Test: Create a second provider with different constraints
+- name: create second provider
+  POST: /resource_providers
+  data:
+      name: unconstrained_provider
+      uuid: $ENVIRON['RP_UUID1']
+  status: 200
+
+- name: set unconstrained inventory
+  PUT: /resource_providers/$ENVIRON['RP_UUID1']/inventories
+  data:
+      inventories:
+          VCPU:
+              total: 64
+              # Default min_unit=1, max_unit=total, step_size=1
+          MEMORY_MB:
+              total: 131072
+      resource_provider_generation: $HISTORY['create second provider'].$RESPONSE['$.generation']
+  status: 200
+
+# Test: Request that fails on constrained provider but passes on unconstrained
+- name: unconstrained provider accepts request
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:1
+  status: 200
+  response_json_paths:
+      # Should get candidate from unconstrained provider only
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID1'].resources.VCPU: 1
+
+# Test: Request that passes on both providers
+- name: both providers can satisfy valid request
+  GET: /allocation_candidates
+  query_parameters:
+      resources: VCPU:4
+  status: 200
+  response_json_paths:
+      # Should get candidates from both providers
+      $.allocation_requests.`len`: 2
+
+# Test: edge case - step_size alignment at boundary
+- name: step_size boundary test
+  GET: /allocation_candidates
+  query_parameters:
+      # DISK_GB: min=10, step=10, so valid values are 10, 20, 30, etc.
+      resources: DISK_GB:20
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 1
+      $.allocation_requests[0].allocations.$ENVIRON['RP_UUID'].resources.DISK_GB: 20
+
+# Test: step_size boundary violation
+- name: step_size boundary violation
+  GET: /allocation_candidates
+  query_parameters:
+      # 15 is not valid: (15 - 10) % 10 = 5 != 0
+      resources: DISK_GB:15
+  status: 200
+  response_json_paths:
+      $.allocation_requests.`len`: 0

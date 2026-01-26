@@ -9,13 +9,17 @@ Error responses follow the OpenStack Placement API format::
             {
                 "status": <http_status_code>,
                 "title": "<error_title>",
-                "detail": "<error_detail>"
+                "detail": "<error_detail>",
+                "code": "<error_code>"  # Only at microversion 1.23+
             }
         ]
     }
 
 Exception classes use the OpenStack msg_fmt pattern for consistent
 error message formatting with keyword argument substitution.
+
+Error codes follow the Placement API specification and are documented at:
+http://specs.openstack.org/openstack/api-wg/guidelines/errors.html
 """
 
 from __future__ import annotations
@@ -27,6 +31,30 @@ import flask
 from oslo_log import log
 
 LOG = log.getLogger(__name__)
+
+# Error code constants - match Placement API exactly
+# Do not change the string values. Once set, they are set.
+DEFAULT = "placement.undefined_code"
+INVENTORY_INUSE = "placement.inventory.inuse"
+CONCURRENT_UPDATE = "placement.concurrent_update"
+DUPLICATE_NAME = "placement.duplicate_name"
+PROVIDER_IN_USE = "placement.resource_provider.inuse"
+PROVIDER_CANNOT_DELETE_PARENT = "placement.resource_provider.cannot_delete_parent"
+RESOURCE_PROVIDER_NOT_FOUND = "placement.resource_provider.not_found"
+ILLEGAL_DUPLICATE_QUERYPARAM = "placement.query.duplicate_key"
+QUERYPARAM_BAD_VALUE = "placement.query.bad_value"
+QUERYPARAM_MISSING_VALUE = "placement.query.missing_value"
+
+
+def _should_include_error_code() -> bool:
+    """Check if error codes should be included based on microversion.
+
+    Error codes are only included at microversion 1.23+.
+    """
+    mv = getattr(flask.g, "microversion", None)
+    if mv is None:
+        return False
+    return mv.is_at_least(23)
 
 
 class TachyonException(Exception):
@@ -75,6 +103,8 @@ class TachyonException(Exception):
     def to_response(self) -> tuple[flask.Response, int]:
         """Convert exception to a Placement-compatible JSON response.
 
+        Error codes are only included at microversion 1.23+.
+
         :returns: Tuple of (JSON response, status code)
         """
         error: dict[str, Any] = {
@@ -82,7 +112,8 @@ class TachyonException(Exception):
             "title": self.title,
             "detail": self.detail,
         }
-        if self.code:
+        # Error codes only at microversion 1.23+
+        if self.code and _should_include_error_code():
             error["code"] = self.code
 
         body = {"errors": [error]}
@@ -200,6 +231,7 @@ class InventoryInUse(Conflict):
         "Inventory for %(resource_class)s has %(allocation_count)s active allocations"
     )
     title = "Inventory In Use"
+    code = INVENTORY_INUSE
 
 
 class ResourceProviderInUse(Conflict):
@@ -211,6 +243,22 @@ class ResourceProviderInUse(Conflict):
 
     msg_fmt = "Unable to delete resource provider %(uuid)s: %(reason)s"
     title = "Resource Provider In Use"
+    code = PROVIDER_IN_USE
+
+
+class CannotDeleteParentResourceProvider(Conflict):
+    """Cannot delete a resource provider that has child providers.
+
+    :Usage:
+        raise CannotDeleteParentResourceProvider(uuid=rp_uuid)
+    """
+
+    msg_fmt = (
+        "Unable to delete parent resource provider %(uuid)s: "
+        "It has child resource providers."
+    )
+    title = "Conflict"
+    code = PROVIDER_CANNOT_DELETE_PARENT
 
 
 class ConsumerGenerationConflict(Conflict):
@@ -224,6 +272,7 @@ class ConsumerGenerationConflict(Conflict):
         "Consumer %(uuid)s generation mismatch: expected %(expected)s, got %(got)s"
     )
     title = "Consumer Generation Conflict"
+    code = CONCURRENT_UPDATE
 
 
 class ResourceProviderGenerationConflict(Conflict):
@@ -235,7 +284,7 @@ class ResourceProviderGenerationConflict(Conflict):
 
     msg_fmt = "resource provider generation conflict"
     title = "Conflict"
-    code = "placement.concurrent_update"
+    code = CONCURRENT_UPDATE
 
 
 class NotAcceptable(TachyonException):
@@ -270,7 +319,7 @@ class DuplicateName(Conflict):
     """
 
     msg_fmt = "Conflicting %(resource_type)s name: %(name)s already exists"
-    code = "placement.duplicate_name"
+    code = DUPLICATE_NAME
 
 
 class DuplicateUUID(Conflict):
